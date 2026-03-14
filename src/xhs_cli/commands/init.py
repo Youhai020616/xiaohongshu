@@ -49,15 +49,14 @@ def init(proxy, no_proxy, port, skip_login):
     status("系统", f"{system} {arch}")
 
     # MCP 二进制
-    if os.path.isfile(MCP_BINARY):
+    mcp_available = os.path.isfile(MCP_BINARY)
+    if mcp_available:
         status("MCP 二进制", "✅ 已找到", "green")
     else:
-        status("MCP 二进制", "❌ 未找到", "red")
-        error(f"MCP 文件不存在: {MCP_BINARY}")
-        if arch != "arm64" or system != "Darwin":
-            warning("当前仅支持 macOS Apple Silicon (arm64)")
-            warning("CDP 脚本仍可在其他平台使用: xhs login --cdp")
-        raise SystemExit(1)
+        status("MCP 二进制", "⚠️ 未找到 (将使用 CDP 模式)", "yellow")
+        if system != "Darwin" or arch != "arm64":
+            info(f"当前平台 {system} {arch} 暂无 MCP 二进制")
+        info("CDP 模式可用: 发布、搜索、数据看板等功能均支持")
 
     # Chrome (CDP 需要)
     chrome_ok = _check_chrome()
@@ -106,7 +105,13 @@ def init(proxy, no_proxy, port, skip_login):
     console.rule("[bold]Step 3/4 — 启动 MCP 服务[/]")
     console.print()
 
-    if MCPClient.is_running(port=port):
+    if not mcp_available:
+        info("MCP 二进制不可用，跳过 MCP 服务启动")
+        info("你可以使用 CDP 模式: [bold]xhs login --cdp[/]")
+        cfg["default"]["engine"] = "cdp"
+        config.save_config(cfg)
+        skip_login = True
+    elif MCPClient.is_running(port=port):
         pid = MCPClient.get_server_pid()
         success(f"MCP 服务已在运行 (PID: {pid})")
     else:
@@ -171,19 +176,34 @@ def init(proxy, no_proxy, port, skip_login):
     console.print()
     console.rule("[bold green]✅ 初始化完成[/]")
     console.print()
-    console.print(Panel(
-        "[bold]🎉 你已准备就绪! 以下是常用命令:[/]\n\n"
-        "  [bold cyan]xhs search[/] \"关键词\"          搜索笔记\n"
-        "  [bold cyan]xhs publish[/] -t 标题 -c 正文 -i 图片  发布笔记\n"
-        "  [bold cyan]xhs like[/] FEED_ID -t TOKEN    点赞\n"
-        "  [bold cyan]xhs me[/]                       查看我的信息\n"
-        "  [bold cyan]xhs analytics[/]                数据看板\n"
-        "  [bold cyan]xhs server status[/]            服务状态\n"
-        "  [bold cyan]xhs --help[/]                   查看所有命令\n\n"
-        "[dim]提示: 大部分命令支持 --json-output 输出 JSON 格式[/]",
-        title="📖 快速参考",
-        border_style="cyan",
-    ))
+    # 根据平台显示不同提示
+    if mcp_available:
+        tips = (
+            "[bold]🎉 你已准备就绪! 以下是常用命令:[/]\n\n"
+            "  [bold cyan]xhs search[/] \"关键词\"          搜索笔记\n"
+            "  [bold cyan]xhs publish[/] -t 标题 -c 正文 -i 图片  发布笔记\n"
+            "  [bold cyan]xhs like[/] FEED_ID -t TOKEN    点赞\n"
+            "  [bold cyan]xhs me[/]                       查看我的信息\n"
+            "  [bold cyan]xhs analytics[/]                数据看板\n"
+            "  [bold cyan]xhs server status[/]            服务状态\n"
+            "  [bold cyan]xhs --help[/]                   查看所有命令\n\n"
+            "[dim]提示: 大部分命令支持 --json-output 输出 JSON 格式[/]"
+        )
+    else:
+        tips = (
+            "[bold]🎉 你已准备就绪! (CDP 模式)[/]\n\n"
+            "  [bold yellow]首先登录:[/]\n"
+            "  [bold cyan]xhs login --cdp[/]              打开 Chrome 扫码登录\n\n"
+            "  [bold yellow]然后使用:[/]\n"
+            "  [bold cyan]xhs search[/] \"关键词\" --engine cdp   搜索笔记\n"
+            "  [bold cyan]xhs publish[/] -t 标题 -c 正文 -i 图片 --engine cdp\n"
+            "  [bold cyan]xhs analytics[/]                数据看板\n"
+            "  [bold cyan]xhs notifications[/]            通知消息\n"
+            "  [bold cyan]xhs --help[/]                   查看所有命令\n\n"
+            "[dim]当前平台无 MCP 二进制，所有功能通过 CDP (Chrome) 实现[/]"
+        )
+
+    console.print(Panel(tips, title="📖 快速参考", border_style="cyan"))
     console.print()
 
 

@@ -293,11 +293,21 @@ See [docs/claude-code-integration.md](docs/claude-code-integration.md) for setup
 
 | Component | macOS ARM64 | macOS x86 | Linux | Windows |
 |-----------|:-----------:|:---------:|:-----:|:-------:|
+| **xhs CLI** | ✅ | ✅ | ✅ | ✅ |
 | MCP Server | ✅ | ❌ | ❌ | ❌ |
-| Login Helper | ✅ | ❌ | ❌ | ❌ |
 | CDP Scripts | ✅ | ✅ | ✅ | ✅ |
 
-> The MCP binary is currently only built for macOS ARM64 (Apple Silicon). Other platform builds can be added on request.
+**Windows / Linux / macOS x86 users**: Run `xhs init` — the CLI auto-detects missing MCP binary and switches to **CDP-only mode**. All features (publish, search, analytics, etc.) work through Chrome.
+
+```bash
+# Windows
+setup.bat                    # One-click install
+activate.bat && xhs init    # Initialize (auto CDP mode)
+
+# macOS / Linux
+bash setup.sh
+source activate.sh && xhs init
+```
 
 ## Project Structure
 

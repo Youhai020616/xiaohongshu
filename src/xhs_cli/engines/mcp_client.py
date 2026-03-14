@@ -9,6 +9,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import time
 from typing import Any, Optional
 
@@ -22,10 +23,71 @@ SESSION_TIMEOUT = 10  # seconds
 
 # Locate MCP binary relative to project root
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-MCP_BINARY = os.path.join(_PROJECT_ROOT, "mcp", "xiaohongshu-mcp-darwin-arm64")
-MCP_LOGIN_BINARY = os.path.join(_PROJECT_ROOT, "mcp", "xiaohongshu-login-darwin-arm64")
 MCP_LOG_FILE = os.path.join(_PROJECT_ROOT, "mcp", "mcp.log")
 MCP_COOKIES_FILE = os.path.join(_PROJECT_ROOT, "mcp", "cookies.json")
+
+
+def _detect_mcp_binary() -> str:
+    """自动检测当前平台的 MCP 二进制文件。"""
+    import platform
+    system = platform.system().lower()   # darwin / linux / windows
+    arch = platform.machine().lower()    # arm64 / x86_64 / amd64
+
+    # 映射平台名
+    if system == "darwin":
+        os_name = "darwin"
+    elif system == "linux":
+        os_name = "linux"
+    elif system == "windows":
+        os_name = "windows"
+    else:
+        os_name = system
+
+    if arch in ("arm64", "aarch64"):
+        arch_name = "arm64"
+    elif arch in ("x86_64", "amd64", "x64"):
+        arch_name = "amd64"
+    else:
+        arch_name = arch
+
+    # 尝试查找二进制
+    mcp_dir = os.path.join(_PROJECT_ROOT, "mcp")
+    candidates = [
+        f"xiaohongshu-mcp-{os_name}-{arch_name}",
+        f"xiaohongshu-mcp-{os_name}-{arch_name}.exe",
+        "xiaohongshu-mcp-darwin-arm64",  # fallback
+    ]
+    for name in candidates:
+        path = os.path.join(mcp_dir, name)
+        if os.path.isfile(path):
+            return path
+    # 返回最可能的路径（即使不存在）
+    return os.path.join(mcp_dir, candidates[0])
+
+
+def _detect_login_binary() -> str:
+    """自动检测当前平台的登录二进制文件。"""
+    import platform
+    system = platform.system().lower()
+    arch = platform.machine().lower()
+    os_name = {"darwin": "darwin", "linux": "linux", "windows": "windows"}.get(system, system)
+    arch_name = "arm64" if arch in ("arm64", "aarch64") else "amd64" if arch in ("x86_64", "amd64", "x64") else arch
+
+    mcp_dir = os.path.join(_PROJECT_ROOT, "mcp")
+    candidates = [
+        f"xiaohongshu-login-{os_name}-{arch_name}",
+        f"xiaohongshu-login-{os_name}-{arch_name}.exe",
+        "xiaohongshu-login-darwin-arm64",
+    ]
+    for name in candidates:
+        path = os.path.join(mcp_dir, name)
+        if os.path.isfile(path):
+            return path
+    return os.path.join(mcp_dir, candidates[0])
+
+
+MCP_BINARY = _detect_mcp_binary()
+MCP_LOGIN_BINARY = _detect_login_binary()
 
 
 class MCPError(Exception):
@@ -206,17 +268,47 @@ class MCPClient:
         raise MCPError("MCP 服务启动超时")
 
     @staticmethod
+    def _find_mcp_pids() -> list[int]:
+        """跨平台查找 MCP 进程 PID。"""
+        pids = []
+        try:
+            if sys.platform == "win32":
+                # Windows: wmic / tasklist
+                result = subprocess.run(
+                    ["tasklist", "/FI", "IMAGENAME eq xiaohongshu-mcp*", "/FO", "CSV", "/NH"],
+                    capture_output=True, text=True,
+                )
+                for line in result.stdout.strip().split("\n"):
+                    parts = line.strip().strip('"').split('","')
+                    if len(parts) >= 2 and parts[0].startswith("xiaohongshu-mcp"):
+                        pids.append(int(parts[1]))
+            else:
+                # macOS / Linux: pgrep
+                binary_name = os.path.basename(MCP_BINARY)
+                result = subprocess.run(
+                    ["pgrep", "-f", binary_name],
+                    capture_output=True, text=True,
+                )
+                for pid in result.stdout.strip().split("\n"):
+                    if pid.strip():
+                        pids.append(int(pid.strip()))
+        except Exception:
+            pass
+        return pids
+
+    @staticmethod
     def stop_server() -> bool:
         """停止 MCP 服务。"""
+        pids = MCPClient._find_mcp_pids()
+        if not pids:
+            return True
         try:
-            result = subprocess.run(
-                ["pgrep", "-f", "xiaohongshu-mcp-darwin-arm64"],
-                capture_output=True, text=True,
-            )
-            pids = result.stdout.strip().split("\n")
             for pid in pids:
-                if pid.strip():
-                    os.kill(int(pid.strip()), signal.SIGTERM)
+                if sys.platform == "win32":
+                    subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                                   capture_output=True)
+                else:
+                    os.kill(pid, signal.SIGTERM)
             return True
         except Exception:
             return False
@@ -224,17 +316,8 @@ class MCPClient:
     @staticmethod
     def get_server_pid() -> Optional[int]:
         """获取 MCP 服务进程 PID。"""
-        try:
-            result = subprocess.run(
-                ["pgrep", "-f", "xiaohongshu-mcp-darwin-arm64"],
-                capture_output=True, text=True,
-            )
-            pids = result.stdout.strip().split("\n")
-            if pids and pids[0].strip():
-                return int(pids[0].strip())
-        except Exception:
-            pass
-        return None
+        pids = MCPClient._find_mcp_pids()
+        return pids[0] if pids else None
 
     # ------------------------------------------------------------------
     # High-level tool wrappers
