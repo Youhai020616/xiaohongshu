@@ -48,8 +48,10 @@ def init(proxy, no_proxy, port, skip_login):
     system = platform.system()
     status("系统", f"{system} {arch}")
 
-    # MCP 二进制
-    mcp_available = os.path.isfile(MCP_BINARY)
+    # MCP 二进制 — 检查是否存在且适用于当前平台
+    mcp_available = os.path.isfile(MCP_BINARY) and (
+        system == "Darwin" or not MCP_BINARY.endswith("-darwin-arm64")
+    )
     if mcp_available:
         status("MCP 二进制", "✅ 已找到", "green")
     else:

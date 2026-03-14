@@ -60,7 +60,7 @@ success "项目目录: $PROJECT_DIR"
 
 # ── 3. 创建虚拟环境 ──────────────────────────────────
 VENV_DIR="$PROJECT_DIR/.venv"
-if [ -d "$VENV_DIR" ] && [ -f "$VENV_DIR/bin/activate" ]; then
+if [ -d "$VENV_DIR" ] && { [ -f "$VENV_DIR/bin/activate" ] || [ -f "$VENV_DIR/Scripts/activate" ]; }; then
     success "虚拟环境已存在: $VENV_DIR"
 else
     info "创建虚拟环境..."
@@ -70,7 +70,11 @@ fi
 
 # ── 4. 安装依赖 ──────────────────────────────────────
 info "安装依赖..."
-source "$VENV_DIR/bin/activate"
+if [ -f "$VENV_DIR/Scripts/activate" ]; then
+    source "$VENV_DIR/Scripts/activate"
+else
+    source "$VENV_DIR/bin/activate"
+fi
 pip install -e . --quiet 2>&1 | tail -1
 success "依赖安装完成"
 
@@ -97,7 +101,11 @@ cat > "$ACTIVATE_SCRIPT" << 'EOF'
 #!/usr/bin/env bash
 # 激活 xhs-cli 环境
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/.venv/bin/activate"
+if [ -f "$SCRIPT_DIR/.venv/Scripts/activate" ]; then
+    source "$SCRIPT_DIR/.venv/Scripts/activate"
+else
+    source "$SCRIPT_DIR/.venv/bin/activate"
+fi
 echo "📕 xhs-cli 环境已激活，输入 xhs --help 开始使用"
 EOF
 chmod +x "$ACTIVATE_SCRIPT"
