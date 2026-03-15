@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "xhs-cli"
+name = "redbook-cli"
 version = "0.2.0"
 description = "小红书命令行工具 — 搜索、发布、互动、数据分析、短索引导航"
 readme = "README.md"
