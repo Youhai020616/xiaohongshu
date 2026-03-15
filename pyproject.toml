@@ -4,23 +4,50 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xhs-cli"
-version = "0.1.0"
-description = "小红书命令行工具 — 发布、搜索、互动、数据分析"
+version = "0.2.0"
+description = "小红书命令行工具 — 搜索、发布、互动、数据分析、短索引导航"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
-authors = [{ name = "Youhai" }]
+requires-python = ">=3.10"
+authors = [{ name = "Youhai", email = "youhai020616@gmail.com" }]
 keywords = ["xiaohongshu", "xhs", "redbook", "小红书", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
 
 dependencies = [
     "click>=8.0",
     "rich>=13.0",
     "requests>=2.28.0",
     "websockets>=12.0",
+    "browser-cookie3>=0.19",
+    "PyYAML>=6.0",
 ]
 
 [project.scripts]
 xhs = "xhs_cli.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/Youhai020616/xiaohongshu"
+Repository = "https://github.com/Youhai020616/xiaohongshu"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E402", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/xhs_cli/commands/init.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xhs_cli", "scripts"]
