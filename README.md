@@ -158,3 +158,13 @@ MCP is the primary engine (always-on daemon). CDP is used for features MCP doesn
 ## License
 
 [MIT](./LICENSE)
+
+## 🔗 Ecosystem
+
+| Project | Description |
+|---------|-------------|
+| [AgentMind](https://github.com/Youhai020616/Agentmind) | Self-learning memory system for AI agents |
+| [stealth-cli](https://github.com/Youhai020616/stealth-cli) | Anti-detection browser CLI powered by Camoufox |
+| [stealth-x](https://github.com/Youhai020616/stealth-x) | Stealth X/Twitter automation |
+| [dy-cli](https://github.com/Youhai020616/douyin) | Douyin/TikTok CLI |
+| [freepost](https://github.com/Youhai020616/freepost-saas) | AI social media management |
