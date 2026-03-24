@@ -28,6 +28,12 @@ dependencies = [
     "PyYAML>=6.0",
 ]
 
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+]
+
 [project.scripts]
 xhs = "xhs_cli.main:cli"
 

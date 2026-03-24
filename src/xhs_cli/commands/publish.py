@@ -24,11 +24,12 @@ from xhs_cli.utils.output import console, error, info, success, warning
               default="公开可见", help="可见范围")
 @click.option("--original", is_flag=True, help="声明原创")
 @click.option("--schedule", default=None, help="定时发布 (ISO 8601, 如 2026-03-15T10:30:00+08:00)")
+@click.option("--products", multiple=True, help="商品关键词 (可多个，如: --products 面膜 --products 防晒霜)")
 @click.option("--engine", type=click.Choice(["auto", "mcp", "cdp"]), default="auto",
               help="指定引擎 (默认自动选择)")
 @click.option("--account", default=None, help="使用指定账号")
 @click.option("--dry-run", is_flag=True, help="预览模式，不实际发布")
-def publish(title, content, content_file, images, video, tags, visibility, original, schedule, engine, account, dry_run):
+def publish(title, content, content_file, images, video, tags, visibility, original, schedule, products, engine, account, dry_run):
     """发布图文或视频笔记。"""
 
     # 处理正文
@@ -60,6 +61,7 @@ def publish(title, content, content_file, images, video, tags, visibility, origi
             raise SystemExit(1)
 
     tags = list(tags)
+    products = list(products)
 
     # 预览模式
     if dry_run:
@@ -73,6 +75,8 @@ def publish(title, content, content_file, images, video, tags, visibility, origi
             console.print(f"  [bold]图片:[/] {', '.join(images)}")
         if tags:
             console.print(f"  [bold]标签:[/] {', '.join(tags)}")
+        if products:
+            console.print(f"  [bold]商品:[/] {', '.join(products)}")
         console.print(f"  [bold]可见:[/] {visibility}")
         if schedule:
             console.print(f"  [bold]定时:[/] {schedule}")
@@ -94,12 +98,14 @@ def publish(title, content, content_file, images, video, tags, visibility, origi
 
     # 执行发布
     if engine == "mcp":
-        _publish_mcp(cfg, title, content, images, video, tags, visibility, original, schedule)
+        _publish_mcp(cfg, title, content, images, video, tags, visibility, original, schedule, products)
     else:
+        if products:
+            warning("--products 仅 MCP 引擎支持，CDP 引擎将忽略")
         _publish_cdp(cfg, title, content, images, video, tags, account)
 
 
-def _publish_mcp(cfg, title, content, images, video, tags, visibility, original, schedule):
+def _publish_mcp(cfg, title, content, images, video, tags, visibility, original, schedule, products):
     """通过 MCP 发布。"""
     client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
 
@@ -113,6 +119,7 @@ def _publish_mcp(cfg, title, content, images, video, tags, visibility, original,
                 tags=tags or None,
                 visibility=visibility,
                 schedule_at=schedule,
+                products=products or None,
             )
         else:
             client.publish(
@@ -123,6 +130,7 @@ def _publish_mcp(cfg, title, content, images, video, tags, visibility, original,
                 visibility=visibility,
                 is_original=original,
                 schedule_at=schedule,
+                products=products or None,
             )
 
         success("发布成功! 🎉")

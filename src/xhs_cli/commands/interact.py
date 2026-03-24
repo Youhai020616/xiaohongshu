@@ -36,6 +36,35 @@ def _get_mcp():
     return MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
 
 
+def _extract_result_text(result) -> str:
+    """从 MCP 工具返回值中提取文本。
+
+    MCP 结果格式可能是：
+    - {"content": [{"type": "text", "text": "..."}]}  (标准 MCP)
+    - {"result": {"content": [...]}}                   (JSON-RPC 包装)
+    - str                                              (直接字符串)
+    """
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        # 尝试从 content 数组提取
+        content = result.get("content", [])
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+            if parts:
+                return "\n".join(parts)
+        # 直接取 text
+        if "text" in result:
+            return result["text"]
+        # 嵌套 result
+        if "result" in result:
+            return _extract_result_text(result["result"])
+    return str(result)
+
+
 @click.command("like", help="点赞笔记 (支持短索引: xhs like 1)")
 @click.argument("feed_id")
 @click.option("--token", "-t", default=None, help="xsec_token")
@@ -47,8 +76,15 @@ def like(feed_id, token, unlike):
     info(f"正在{action}...")
 
     try:
-        _get_mcp().like(feed_id, token, unlike=unlike)
+        result = _get_mcp().like(feed_id, token, unlike=unlike)
+        text = _extract_result_text(result)
+        # Go 端已有智能检测：已点赞则跳过点击，返回文本包含结果
+        if "失败" in text:
+            error(text)
+            raise SystemExit(1)
         success(f"{action}成功 👍")
+        if text:
+            info(f"服务端: {text}")
     except MCPError as e:
         error(f"{action}失败: {e}")
         raise SystemExit(1)
@@ -65,8 +101,14 @@ def favorite(feed_id, token, unfavorite):
     info(f"正在{action}...")
 
     try:
-        _get_mcp().favorite(feed_id, token, unfavorite=unfavorite)
+        result = _get_mcp().favorite(feed_id, token, unfavorite=unfavorite)
+        text = _extract_result_text(result)
+        if "失败" in text:
+            error(text)
+            raise SystemExit(1)
         success(f"{action}成功 ⭐")
+        if text:
+            info(f"服务端: {text}")
     except MCPError as e:
         error(f"{action}失败: {e}")
         raise SystemExit(1)
@@ -82,8 +124,14 @@ def comment(feed_id, token, content):
     info("正在发表评论...")
 
     try:
-        _get_mcp().comment(feed_id, token, content)
+        result = _get_mcp().comment(feed_id, token, content)
+        text = _extract_result_text(result)
+        if "失败" in text:
+            error(text)
+            raise SystemExit(1)
         success("评论成功 💬")
+        if text:
+            info(f"服务端: {text}")
     except MCPError as e:
         error(f"评论失败: {e}")
         raise SystemExit(1)
@@ -101,8 +149,14 @@ def reply(feed_id, token, comment_id, user_id, content):
     info("正在回复...")
 
     try:
-        _get_mcp().reply(feed_id, token, comment_id, user_id, content)
+        result = _get_mcp().reply(feed_id, token, comment_id, user_id, content)
+        text = _extract_result_text(result)
+        if "失败" in text:
+            error(text)
+            raise SystemExit(1)
         success("回复成功 💬")
+        if text:
+            info(f"服务端: {text}")
     except MCPError as e:
         error(f"回复失败: {e}")
         raise SystemExit(1)

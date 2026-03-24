@@ -18,6 +18,7 @@ from xhs_cli.utils.output import (
     print_feed_detail,
     print_feeds,
     print_json,
+    warning,
 )
 
 
@@ -29,12 +30,16 @@ from xhs_cli.utils.output import (
               default=None, help="笔记类型")
 @click.option("--time", "pub_time", type=click.Choice(["不限", "一天内", "一周内", "半年内"]),
               default=None, help="发布时间")
+@click.option("--scope", type=click.Choice(["不限", "已看过", "未看过", "已关注"]),
+              default=None, help="搜索范围")
+@click.option("--location", type=click.Choice(["不限", "同城", "附近"]),
+              default=None, help="位置距离")
 @click.option("--engine", type=click.Choice(["auto", "mcp", "cdp"]), default="auto",
               help="引擎 (cdp 返回推荐词)")
 @click.option("--json-output", "as_json", is_flag=True, help="输出 JSON")
 @click.option("-o", "--output", default=None, help="导出到文件 (.json/.csv)")
 @click.option("--limit", type=int, default=20, help="最大结果数")
-def search(keyword, sort, note_type, pub_time, engine, as_json, output, limit):
+def search(keyword, sort, note_type, pub_time, scope, location, engine, as_json, output, limit):
     """搜索笔记。搜索后可用 xhs read 1 / xhs like 1 操作结果。"""
     cfg = config.load_config()
 
@@ -46,19 +51,44 @@ def search(keyword, sort, note_type, pub_time, engine, as_json, output, limit):
         ) else "cdp"
 
     if engine == "mcp":
-        _search_mcp(cfg, keyword, sort, as_json, output)
+        _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_json, output)
     else:
+        if scope or location:
+            warning("--scope 和 --location 仅 MCP 引擎支持，CDP 引擎将忽略")
         _search_cdp(cfg, keyword, sort, note_type, pub_time, as_json, output)
 
 
-def _search_mcp(cfg, keyword, sort, as_json, output):
+def _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_json, output):
     client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
-    info(f"正在搜索: {keyword} (MCP)")
+
+    # 构建过滤条件描述用于日志
+    filter_parts = []
+    if sort:
+        filter_parts.append(f"排序={sort}")
+    if note_type:
+        filter_parts.append(f"类型={note_type}")
+    if pub_time:
+        filter_parts.append(f"时间={pub_time}")
+    if scope:
+        filter_parts.append(f"范围={scope}")
+    if location:
+        filter_parts.append(f"位置={location}")
+    filter_desc = f" ({', '.join(filter_parts)})" if filter_parts else ""
+    info(f"正在搜索: {keyword} (MCP{filter_desc})")
 
     try:
+        # 构建 filters，字段名与 Go 端 FilterOption JSON tag 对齐
         filters = {}
         if sort:
-            filters["sort"] = sort
+            filters["sort_by"] = sort
+        if note_type:
+            filters["note_type"] = note_type
+        if pub_time:
+            filters["publish_time"] = pub_time
+        if scope:
+            filters["search_scope"] = scope
+        if location:
+            filters["location"] = location
         result = client.search(keyword, filters=filters or None)
     except MCPError as e:
         error(f"搜索失败: {e}")
@@ -160,10 +190,15 @@ def _cache_feeds(feeds: list[dict]):
 @click.command("detail", help="查看笔记详情 (支持短索引: xhs detail 1)")
 @click.argument("feed_id")
 @click.option("--token", "-t", default=None, help="xsec_token (短索引自动填入)")
-@click.option("--comments", is_flag=True, help="加载所有评论")
+@click.option("--comments", is_flag=True, help="加载全部评论 (默认仅前 10 条)")
+@click.option("--comment-limit", type=int, default=20, help="最多加载评论数 (默认 20，需 --comments)")
+@click.option("--expand-replies", is_flag=True, help="展开子评论/二级回复 (需 --comments)")
+@click.option("--reply-limit", type=int, default=10, help="跳过回复数超过此值的评论 (默认 10，需 --expand-replies)")
+@click.option("--scroll-speed", type=click.Choice(["slow", "normal", "fast"]),
+              default=None, help="评论滚动加载速度 (需 --comments)")
 @click.option("--engine", type=click.Choice(["auto", "mcp", "cdp"]), default="auto")
 @click.option("--json-output", "as_json", is_flag=True, help="输出 JSON")
-def detail(feed_id, token, comments, engine, as_json):
+def detail(feed_id, token, comments, comment_limit, expand_replies, reply_limit, scroll_speed, engine, as_json):
     """查看笔记详情和评论。支持短索引 (xhs search → xhs detail 1)。"""
     # 解析短索引
     try:
@@ -194,7 +229,14 @@ def detail(feed_id, token, comments, engine, as_json):
         if engine == "mcp":
             client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
             info("正在获取详情 (MCP)...")
-            result = client.get_feed_detail(feed_id, token, load_all_comments=comments)
+            result = client.get_feed_detail(
+                feed_id, token,
+                load_all_comments=comments,
+                limit=comment_limit,
+                click_more_replies=expand_replies,
+                reply_limit=reply_limit,
+                scroll_speed=scroll_speed,
+            )
         else:
             client = CDPClient(
                 host=cfg["cdp"]["host"], port=cfg["cdp"]["port"],

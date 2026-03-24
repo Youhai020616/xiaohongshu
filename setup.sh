@@ -86,13 +86,24 @@ else
 fi
 
 # ── 6. MCP 二进制检查 ────────────────────────────────
-MCP_BIN="$PROJECT_DIR/mcp/xiaohongshu-mcp-darwin-arm64"
-if [ -f "$MCP_BIN" ]; then
-    chmod +x "$MCP_BIN"
-    chmod +x "$PROJECT_DIR/mcp/xiaohongshu-login-darwin-arm64" 2>/dev/null || true
-    success "MCP 二进制已就绪"
+# 自动检测当前平台
+case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64)   MCP_SUFFIX="darwin-arm64" ;;
+    Darwin-x86_64)  MCP_SUFFIX="darwin-amd64" ;;
+    Linux-x86_64)   MCP_SUFFIX="linux-amd64"  ;;
+    Linux-aarch64)  MCP_SUFFIX="linux-arm64"  ;;
+    MINGW*|MSYS*|CYGWIN*)  MCP_SUFFIX="windows-amd64" ;;
+    *)              MCP_SUFFIX="" ;;
+esac
+
+MCP_BIN="$PROJECT_DIR/mcp/xiaohongshu-mcp-${MCP_SUFFIX}"
+if [ -n "$MCP_SUFFIX" ] && [ -f "$MCP_BIN" ]; then
+    chmod +x "$MCP_BIN" 2>/dev/null || true
+    chmod +x "$PROJECT_DIR/mcp/xiaohongshu-login-${MCP_SUFFIX}" 2>/dev/null || true
+    success "MCP 二进制已就绪 ($MCP_SUFFIX)"
 else
-    warn "MCP 二进制不存在 (仅 macOS ARM64 支持)"
+    warn "MCP 二进制不存在 (平台: ${MCP_SUFFIX:-unknown})"
+    info "运行 'xhs server install' 自动下载当前平台二进制"
 fi
 
 # ── 7. 生成激活脚本 ──────────────────────────────────

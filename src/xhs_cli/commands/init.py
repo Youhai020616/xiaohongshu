@@ -14,6 +14,13 @@ import click
 from rich.panel import Panel
 from rich.text import Text
 
+from xhs_cli.engines.mcp_binary import (
+    detect_platform,
+    ensure_binary,
+    is_binary_available,
+    is_go_available,
+    is_source_available,
+)
 from xhs_cli.engines.mcp_client import MCP_BINARY, MCPClient, MCPError
 from xhs_cli.utils import config
 from xhs_cli.utils.output import console, error, info, status, success, warning
@@ -44,21 +51,26 @@ def init(proxy, no_proxy, port, skip_login):
     console.print()
 
     # 系统
+    os_name, arch_name = detect_platform()
     arch = platform.machine()
     system = platform.system()
     status("系统", f"{system} {arch}")
 
-    # MCP 二进制 — 检查是否存在且适用于当前平台
-    mcp_available = os.path.isfile(MCP_BINARY) and (
-        system == "Darwin" or not MCP_BINARY.endswith("-darwin-arm64")
-    )
+    # MCP 二进制 — 检查是否存在，不存在则尝试自动下载
+    mcp_available = is_binary_available()
     if mcp_available:
         status("MCP 二进制", "✅ 已找到", "green")
     else:
-        status("MCP 二进制", "⚠️ 未找到 (将使用 CDP 模式)", "yellow")
-        if system != "Darwin" or arch != "arm64":
-            info(f"当前平台 {system} {arch} 暂无 MCP 二进制")
-        info("CDP 模式可用: 发布、搜索、数据看板等功能均支持")
+        status("MCP 二进制", f"⚠️ 未找到 ({os_name}-{arch_name})", "yellow")
+        info("正在自动下载当前平台的 MCP 二进制...")
+        try:
+            tag = ensure_binary()
+            mcp_available = True
+            success(f"MCP 二进制已安装 (版本: {tag})")
+        except RuntimeError as e:
+            warning(f"自动安装失败: {e}")
+            info("你可以稍后手动安装: [bold]xhs server install[/]")
+            info("CDP 模式可用: 发布、搜索、数据看板等功能均支持")
 
     # Chrome (CDP 需要)
     chrome_ok = _check_chrome()

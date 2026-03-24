@@ -15,76 +15,22 @@ from typing import Any
 
 import requests
 
+from xhs_cli.engines.mcp_binary import (
+    MCP_DIR,
+    get_binary_path,
+    get_login_binary_path,
+)
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 18060
 DEFAULT_PROXY = "http://127.0.0.1:7897"
 SESSION_TIMEOUT = 10  # seconds
 
-# Locate MCP binary relative to project root
-_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-MCP_LOG_FILE = os.path.join(_PROJECT_ROOT, "mcp", "mcp.log")
-MCP_COOKIES_FILE = os.path.join(_PROJECT_ROOT, "mcp", "cookies.json")
-
-
-def _detect_mcp_binary() -> str:
-    """自动检测当前平台的 MCP 二进制文件。"""
-    import platform
-    system = platform.system().lower()   # darwin / linux / windows
-    arch = platform.machine().lower()    # arm64 / x86_64 / amd64
-
-    # 映射平台名
-    if system == "darwin":
-        os_name = "darwin"
-    elif system == "linux":
-        os_name = "linux"
-    elif system == "windows":
-        os_name = "windows"
-    else:
-        os_name = system
-
-    if arch in ("arm64", "aarch64"):
-        arch_name = "arm64"
-    elif arch in ("x86_64", "amd64", "x64"):
-        arch_name = "amd64"
-    else:
-        arch_name = arch
-
-    # 尝试查找当前平台的二进制（不 fallback 到其他平台）
-    mcp_dir = os.path.join(_PROJECT_ROOT, "mcp")
-    candidates = [
-        f"xiaohongshu-mcp-{os_name}-{arch_name}",
-        f"xiaohongshu-mcp-{os_name}-{arch_name}.exe",
-    ]
-    for name in candidates:
-        path = os.path.join(mcp_dir, name)
-        if os.path.isfile(path):
-            return path
-    # 返回预期路径（不存在时 is_running/start_server 会报错）
-    return os.path.join(mcp_dir, candidates[0])
-
-
-def _detect_login_binary() -> str:
-    """自动检测当前平台的登录二进制文件。"""
-    import platform
-    system = platform.system().lower()
-    arch = platform.machine().lower()
-    os_name = {"darwin": "darwin", "linux": "linux", "windows": "windows"}.get(system, system)
-    arch_name = "arm64" if arch in ("arm64", "aarch64") else "amd64" if arch in ("x86_64", "amd64", "x64") else arch
-
-    mcp_dir = os.path.join(_PROJECT_ROOT, "mcp")
-    candidates = [
-        f"xiaohongshu-login-{os_name}-{arch_name}",
-        f"xiaohongshu-login-{os_name}-{arch_name}.exe",
-    ]
-    for name in candidates:
-        path = os.path.join(mcp_dir, name)
-        if os.path.isfile(path):
-            return path
-    return os.path.join(mcp_dir, candidates[0])
-
-
-MCP_BINARY = _detect_mcp_binary()
-MCP_LOGIN_BINARY = _detect_login_binary()
+# 路径统一由 mcp_binary 模块管理
+MCP_LOG_FILE = os.path.join(MCP_DIR, "mcp.log")
+MCP_COOKIES_FILE = os.path.join(MCP_DIR, "cookies.json")
+MCP_BINARY = get_binary_path()
+MCP_LOGIN_BINARY = get_login_binary_path()
 
 
 class MCPError(Exception):
@@ -240,21 +186,38 @@ class MCPClient:
             raise MCPError(f"MCP 二进制文件不存在: {MCP_BINARY}")
 
         os.makedirs(os.path.dirname(MCP_LOG_FILE), exist_ok=True)
+
+        # 代理通过 XHS_PROXY 环境变量传递 (Go 二进制不接受 -rod flag)
         env = {**os.environ, "COOKIES_PATH": MCP_COOKIES_FILE}
+        if proxy:
+            env["XHS_PROXY"] = proxy
 
         cmd = [MCP_BINARY, "-port", f":{port}"]
-        if proxy:
-            cmd.extend(["-rod", f"proxy={proxy}"])
+
+        # 跨平台后台进程创建
+        popen_kwargs = {
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+            "env": env,
+            "cwd": os.path.dirname(MCP_BINARY),
+        }
 
         with open(MCP_LOG_FILE, "a") as log:
-            subprocess.Popen(
-                cmd,
-                stdout=log,
-                stderr=log,
-                env=env,
-                cwd=os.path.dirname(MCP_BINARY),
-                start_new_session=True,
-            )
+            popen_kwargs["stdout"] = log
+            popen_kwargs["stderr"] = log
+
+            if sys.platform == "win32":
+                # Windows: 隐藏控制台窗口，分离进程
+                CREATE_NO_WINDOW = 0x08000000
+                DETACHED_PROCESS = 0x00000008
+                popen_kwargs["creationflags"] = (
+                    CREATE_NO_WINDOW | DETACHED_PROCESS
+                )
+            else:
+                # macOS / Linux: 新会话，脱离终端
+                popen_kwargs["start_new_session"] = True
+
+            subprocess.Popen(cmd, **popen_kwargs)
 
         # Wait for startup
         for _ in range(15):
@@ -268,20 +231,27 @@ class MCPClient:
     def _find_mcp_pids() -> list[int]:
         """跨平台查找 MCP 进程 PID。"""
         pids = []
+        binary_name = os.path.basename(MCP_BINARY)
         try:
             if sys.platform == "win32":
-                # Windows: wmic / tasklist
+                # Windows: wmic 查找精确的进程名
                 result = subprocess.run(
-                    ["tasklist", "/FI", "IMAGENAME eq xiaohongshu-mcp*", "/FO", "CSV", "/NH"],
+                    ["wmic", "process", "where",
+                     f"Name='{binary_name}'",
+                     "get", "ProcessId", "/format:csv"],
                     capture_output=True, text=True,
                 )
                 for line in result.stdout.strip().split("\n"):
-                    parts = line.strip().strip('"').split('","')
-                    if len(parts) >= 2 and parts[0].startswith("xiaohongshu-mcp"):
-                        pids.append(int(parts[1]))
+                    line = line.strip()
+                    if not line or line.startswith("Node"):
+                        continue
+                    parts = line.split(",")
+                    # CSV 格式: Node,ProcessId
+                    pid_str = parts[-1].strip()
+                    if pid_str.isdigit():
+                        pids.append(int(pid_str))
             else:
                 # macOS / Linux: pgrep
-                binary_name = os.path.basename(MCP_BINARY)
                 result = subprocess.run(
                     ["pgrep", "-f", binary_name],
                     capture_output=True, text=True,
@@ -338,6 +308,7 @@ class MCPClient:
         visibility: str = "公开可见",
         is_original: bool = False,
         schedule_at: str | None = None,
+        products: list[str] | None = None,
     ) -> dict:
         args: dict[str, Any] = {
             "title": title,
@@ -352,6 +323,8 @@ class MCPClient:
             args["is_original"] = True
         if schedule_at:
             args["schedule_at"] = schedule_at
+        if products:
+            args["products"] = products
         return self.call_tool("publish_content", args)
 
     def publish_video(
@@ -362,6 +335,7 @@ class MCPClient:
         tags: list[str] | None = None,
         visibility: str = "公开可见",
         schedule_at: str | None = None,
+        products: list[str] | None = None,
     ) -> dict:
         args: dict[str, Any] = {
             "title": title,
@@ -374,6 +348,8 @@ class MCPClient:
             args["visibility"] = visibility
         if schedule_at:
             args["schedule_at"] = schedule_at
+        if products:
+            args["products"] = products
         return self.call_tool("publish_with_video", args)
 
     def search(self, keyword: str, filters: dict | None = None) -> dict:
@@ -382,11 +358,27 @@ class MCPClient:
             args["filters"] = filters
         return self.call_tool("search_feeds", args)
 
-    def get_feed_detail(self, feed_id: str, xsec_token: str, load_all_comments: bool = False) -> dict:
-        args = {"feed_id": feed_id, "xsec_token": xsec_token}
+    def get_feed_detail(
+        self,
+        feed_id: str,
+        xsec_token: str,
+        load_all_comments: bool = False,
+        limit: int = 20,
+        click_more_replies: bool = False,
+        reply_limit: int = 10,
+        scroll_speed: str | None = None,
+    ) -> dict:
+        args: dict[str, Any] = {"feed_id": feed_id, "xsec_token": xsec_token}
         if load_all_comments:
             args["load_all_comments"] = True
-        return self.call_tool("get_feed_detail", args)
+            args["limit"] = limit
+            args["click_more_replies"] = click_more_replies
+            args["reply_limit"] = reply_limit
+            if scroll_speed:
+                args["scroll_speed"] = scroll_speed
+        # 全量评论加载需要更长超时
+        timeout = 180 if load_all_comments else 120
+        return self.call_tool("get_feed_detail", args, timeout=timeout)
 
     def comment(self, feed_id: str, xsec_token: str, content: str) -> dict:
         return self.call_tool("post_comment_to_feed", {

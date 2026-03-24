@@ -2,9 +2,18 @@
 mcp/cookies.json
 mcp/cookies.json.bak
 mcp/mcp.log
+mcp/.version.json
 tmp/
 config/accounts.json
 login_status_cache.json
+
+# MCP 二进制 (按需下载，不随仓库分发)
+mcp/xiaohongshu-mcp-*
+mcp/xiaohongshu-login-*
+
+# Docker 运行时数据
+docker/data/
+docker/images/
 
 # Python
 __pycache__/
@@ -16,6 +25,9 @@ build/
 
 # Config
 ~/.xhs/
+
+# Sources
+sources/
 
 # OS
 .DS_Store
