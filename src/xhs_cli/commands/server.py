@@ -104,7 +104,7 @@ def install(from_source, force):
 @click.option("--proxy", default=None, help="代理地址")
 @click.option("--no-proxy", is_flag=True, help="不使用代理")
 @click.option("--docker", is_flag=True, help="使用 Docker 容器运行 (无需安装 Go/二进制)")
-@click.option("--auto-install", is_flag=True, default=True, help="二进制不存在时自动安装")
+@click.option("--auto-install/--no-auto-install", default=True, help="二进制不存在时自动安装 (默认开启)")
 def start(port, proxy, no_proxy, docker, auto_install):
     """启动 MCP 服务。"""
     cfg = config.load_config()
@@ -182,19 +182,24 @@ def _start_docker(port: int, proxy: str | None):
         docker_engine.start(port=port, proxy=proxy)
         # 等待服务就绪
         import time
+        ready = False
         for i in range(20):
             time.sleep(1)
             if MCPClient.is_running(port=port):
+                ready = True
                 break
-            if i == 19:
-                warning("服务启动较慢，可能仍在初始化中...")
 
-        success("Docker MCP 服务已启动")
-        status("容器", docker_engine.CONTAINER_NAME)
-        status("端口", str(port))
-        status("地址", f"http://127.0.0.1:{port}/mcp")
-        info("本地图片请放入 [bold]docker/images/[/] 目录")
-        info("容器内路径: [bold]/app/images/[/]")
+        if ready:
+            success("Docker MCP 服务已启动")
+            status("容器", docker_engine.CONTAINER_NAME)
+            status("端口", str(port))
+            status("地址", f"http://127.0.0.1:{port}/mcp")
+            info("本地图片请放入 [bold]docker/images/[/] 目录")
+            info("容器内路径: [bold]/app/images/[/]")
+        else:
+            warning("Docker 容器已启动但 MCP 服务未就绪")
+            info("可能仍在初始化，请稍后运行 [bold]xhs server status --docker[/] 检查")
+            info(f"或查看日志: docker logs {docker_engine.CONTAINER_NAME}")
     except docker_engine.DockerError as e:
         error(str(e))
         raise SystemExit(1)

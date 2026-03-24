@@ -166,14 +166,23 @@ def download_binary(progress_callback=None) -> str:
 
     buf.seek(0)
 
-    # 解压
+    # 解压（校验路径防止 path traversal 攻击）
     os.makedirs(MCP_DIR, exist_ok=True)
+    abs_mcp_dir = os.path.realpath(MCP_DIR)
 
     if asset["name"].endswith(".zip"):
         with zipfile.ZipFile(buf) as zf:
+            for member in zf.namelist():
+                dest = os.path.realpath(os.path.join(MCP_DIR, member))
+                if not dest.startswith(abs_mcp_dir + os.sep) and dest != abs_mcp_dir:
+                    raise RuntimeError(f"压缩包路径不安全，拒绝解压: {member}")
             zf.extractall(MCP_DIR)
     else:
         with tarfile.open(fileobj=buf, mode="r:gz") as tf:
+            for member in tf.getmembers():
+                dest = os.path.realpath(os.path.join(MCP_DIR, member.name))
+                if not dest.startswith(abs_mcp_dir + os.sep) and dest != abs_mcp_dir:
+                    raise RuntimeError(f"压缩包路径不安全，拒绝解压: {member.name}")
             tf.extractall(MCP_DIR)
 
     # 设置可执行权限 (非 Windows)

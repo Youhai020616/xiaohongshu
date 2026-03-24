@@ -210,6 +210,11 @@ def create_app() -> FastAPI:
 
     @app.post("/api/v1/publish")
     def publish_content(req: PublishRequest):
+        # 校验：video 和 images 不能同时提供
+        if req.video and req.images:
+            raise HTTPException(400, "不能同时提供 video 和 images，请选择一种")
+        if not req.video and not req.images:
+            raise HTTPException(400, "需要提供 images 或 video")
         try:
             client = _get_mcp()
             if req.video:
@@ -219,8 +224,6 @@ def create_app() -> FastAPI:
                     schedule_at=req.schedule_at, products=req.products or None,
                 )
             else:
-                if not req.images:
-                    raise HTTPException(400, "需要提供 images 或 video")
                 result = client.publish(
                     title=req.title, content=req.content, images=req.images,
                     tags=req.tags or None, visibility=req.visibility,
