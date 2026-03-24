@@ -111,10 +111,11 @@ from xhs_cli.commands.init import init  # noqa: E402
 cli.add_command(init)
 
 # 认证
-from xhs_cli.commands.auth import auth_status, login, logout  # noqa: E402
+from xhs_cli.commands.auth import auth_status, login, logout, reset_login  # noqa: E402
 
 cli.add_command(login)
 cli.add_command(logout)
+cli.add_command(reset_login)
 cli.add_command(auth_status, "status")
 
 # 服务管理
@@ -131,6 +132,11 @@ cli.add_command(account_group, "account")
 from xhs_cli.commands.config_cmd import config_group  # noqa: E402
 
 cli.add_command(config_group, "config")
+
+# REST API
+from xhs_cli.commands.api_cmd import api_group  # noqa: E402
+
+cli.add_command(api_group, "api")
 
 
 def main():

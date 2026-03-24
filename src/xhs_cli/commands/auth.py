@@ -109,6 +109,37 @@ def logout(engine):
         info("CDP 登录态需要手动清除（运行 xhs login --cdp 重新登录）")
 
 
+@click.command("reset-login", help="重置登录状态 (删除 MCP Cookies)")
+@click.confirmation_option(prompt="确定要重置登录状态吗？重置后需要重新扫码登录")
+def reset_login():
+    """删除 MCP Cookies 文件，重置登录状态。比 logout 更彻底。"""
+    cfg = config.load_config()
+
+    if not MCPClient.is_running(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"]):
+        error("MCP 服务未运行，请先启动: xhs server start")
+        raise SystemExit(1)
+
+    info("正在重置登录状态...")
+    try:
+        client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
+        result = client.delete_cookies()
+        success("登录状态已重置 ✅")
+        info("请运行 [bold]xhs login[/] 重新扫码登录")
+
+        # 显示服务端返回的详细信息
+        if isinstance(result, dict):
+            content = result.get("content", [])
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text = item.get("text", "")
+                        if text:
+                            info(f"服务端: {text}")
+    except MCPError as e:
+        error(f"重置失败: {e}")
+        raise SystemExit(1)
+
+
 @click.command("status", help="查看登录状态")
 def auth_status():
     """查看各引擎的登录状态。"""

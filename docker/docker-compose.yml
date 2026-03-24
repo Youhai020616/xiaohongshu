@@ -1,0 +1,31 @@
+# xhs-cli Docker 部署 — MCP 服务
+# 使用上游 xpzouying/xiaohongshu-mcp 官方镜像
+#
+# 用法:
+#   xhs server start --docker       (推荐)
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# 注意:
+#   - 本地图片发布需放入 ./docker/images/ 目录，容器内路径为 /app/images
+#   - Cookies 持久化在 ./docker/data/cookies.json
+
+services:
+  xiaohongshu-mcp:
+    # Docker Hub 镜像（默认）
+    image: xpzouying/xiaohongshu-mcp
+    # 阿里云镜像源（国内用户推荐，取消下行注释并注释上行）
+    # image: crpi-hocnvtkomt7w9v8t.cn-beijing.personal.cr.aliyuncs.com/xpzouying/xiaohongshu-mcp
+    container_name: xhs-mcp
+    restart: unless-stopped
+    init: true
+    tty: true
+    volumes:
+      - ./data:/app/data
+      - ./images:/app/images
+    environment:
+      - ROD_BROWSER_BIN=/usr/bin/google-chrome
+      - COOKIES_PATH=/app/data/cookies.json
+      # 代理（可选，取消注释并填写）
+      # - XHS_PROXY=http://user:pass@proxy:port
+    ports:
+      - "${MCP_PORT:-18060}:18060"
