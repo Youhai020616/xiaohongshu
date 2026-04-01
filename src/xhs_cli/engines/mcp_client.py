@@ -293,8 +293,9 @@ class MCPClient:
     def check_login(self) -> dict:
         return self.call_tool("check_login_status")
 
-    def get_qrcode(self) -> dict:
-        return self.call_tool("get_login_qrcode")
+    def get_qrcode(self, timeout: int = 300) -> dict:
+        """获取登录二维码。浏览器启动较慢，默认 300s 超时。"""
+        return self.call_tool("get_login_qrcode", timeout=timeout)
 
     def delete_cookies(self) -> dict:
         return self.call_tool("delete_cookies")

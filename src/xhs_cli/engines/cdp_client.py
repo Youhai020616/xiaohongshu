@@ -92,9 +92,11 @@ class CDPClient:
 
     def start_chrome(self) -> bool:
         """启动 Chrome 浏览器。"""
-        cmd = [sys.executable, CHROME_LAUNCHER]
+        cmd = [sys.executable, CHROME_LAUNCHER, "--port", str(self.port)]
         if self.headless:
             cmd.append("--headless")
+        if self.account:
+            cmd.extend(["--account", self.account])
         result = self._run(cmd, timeout=30)
         return result.returncode == 0
 
@@ -115,13 +117,20 @@ class CDPClient:
         return result.returncode == 0
 
     def login(self) -> str:
-        """打开登录页面（需要有头模式扫码）。"""
+        """打开登录页面（需要有头模式扫码）。
+
+        Raises:
+            CDPError: Chrome 启动失败或登录页面无法打开。
+        """
         args = [sys.executable, CDP_SCRIPT, "--host", self.host, "--port", str(self.port)]
         if self.account:
             args.extend(["--account", self.account])
         # login 强制有头模式
         args.append("login")
         result = self._run(args, timeout=60)
+        if result.returncode != 0:
+            err_detail = result.stderr.strip() or result.stdout.strip() or "未知错误"
+            raise CDPError(f"登录页面打开失败: {err_detail}")
         return result.stdout
 
     # ------------------------------------------------------------------

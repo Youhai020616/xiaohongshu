@@ -22,7 +22,17 @@ from xhs_cli.utils.output import (
 def me(as_json):
     """获取当前登录账号信息（通过 check_login_status + user_profile）。"""
     cfg = config.load_config()
-    client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
+    host = cfg["mcp"]["host"]
+    port = cfg["mcp"]["port"]
+
+    # 先检查 MCP 服务是否运行
+    if not MCPClient.is_running(host=host, port=port):
+        error("MCP 服务未运行")
+        info("请先启动服务: [bold]xhs server start[/]")
+        info("或直接运行: [bold]xhs login[/] （会自动启动服务）")
+        raise SystemExit(1)
+
+    client = MCPClient(host=host, port=port)
 
     info("正在获取账号信息...")
     try:
@@ -43,12 +53,17 @@ def me(as_json):
                     console.print(f"  {line}")
         else:
             error("未登录")
-            info("请运行: xhs login")
+            info("请运行: [bold]xhs login[/]")
             raise SystemExit(1)
 
     except MCPError as e:
-        error(f"获取信息失败: {e}")
-        info("请确保 MCP 服务已启动且已登录")
+        err_msg = str(e)
+        if "无法连接" in err_msg or "Connection" in err_msg:
+            error("MCP 服务连接失败")
+            info("请检查服务状态: [bold]xhs server status[/]")
+        else:
+            error(f"获取信息失败: {e}")
+            info("请确保已登录: [bold]xhs login[/]")
         raise SystemExit(1)
 
 
