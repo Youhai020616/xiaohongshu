@@ -27,9 +27,9 @@ cp ~/photos/cover.jpg docker/data/images/
 docker compose exec cli xhs publish -t "美食分享" -c "好吃!" -i /app/data/images/cover.jpg
 ```
 
-## 配置代理
+## 配置代理（可选）
 
-海外用户需要代理：
+大多数网络环境可直连小红书，无需代理。如有特殊网络需求（公司内网、IP 池等），可配置代理：
 
 ```bash
 # 方式 1: 环境变量

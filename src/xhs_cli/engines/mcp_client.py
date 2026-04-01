@@ -23,7 +23,7 @@ from xhs_cli.engines.mcp_binary import (
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 18060
-DEFAULT_PROXY = "http://127.0.0.1:7897"
+DEFAULT_PROXY = ""
 SESSION_TIMEOUT = 10  # seconds
 
 # 路径统一由 mcp_binary 模块管理

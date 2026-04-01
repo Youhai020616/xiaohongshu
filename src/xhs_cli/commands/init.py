@@ -28,7 +28,7 @@ from xhs_cli.utils.output import console, error, info, status, success, warning
 
 @click.command("init", help="🚀 初始化设置 (新用户从这里开始)")
 @click.option("--proxy", default=None, help="代理地址 (如 http://127.0.0.1:7897)")
-@click.option("--no-proxy", is_flag=True, help="不使用代理 (在国内网络)")
+@click.option("--no-proxy", is_flag=True, help="不使用代理 (直连)")
 @click.option("--port", type=int, default=18060, help="MCP 服务端口")
 @click.option("--skip-login", is_flag=True, help="跳过登录步骤")
 def init(proxy, no_proxy, port, skip_login):
@@ -91,14 +91,15 @@ def init(proxy, no_proxy, port, skip_login):
 
     if no_proxy:
         proxy_addr = ""
-        info("已选择不使用代理 (国内网络直连)")
+        info("已选择不使用代理 (直连)")
     elif proxy:
         proxy_addr = proxy
         info(f"使用指定代理: {proxy}")
     else:
         # 交互式询问
-        console.print("  小红书 API 在海外需要代理才能访问。")
-        console.print("  如果你在[bold]国内[/]，可以直接回车跳过。")
+        console.print("  代理为可选配置，大多数网络环境可直连小红书。")
+        console.print("  如有特殊网络需求（如公司内网、IP 池等），可在此配置代理。")
+        console.print("  无需代理请直接回车跳过。")
         console.print()
         proxy_addr = click.prompt(
             "  代理地址",

@@ -14,7 +14,7 @@ DEFAULT_CONFIG = {
     "mcp": {
         "host": "127.0.0.1",
         "port": 18060,
-        "proxy": "http://127.0.0.1:7897",
+        "proxy": "",
         "auto_start": True,
     },
     "cdp": {

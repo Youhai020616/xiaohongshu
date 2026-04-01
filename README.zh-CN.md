@@ -47,10 +47,10 @@ cd xiaohongshu
 cd mcp
 chmod +x xiaohongshu-mcp-darwin-arm64
 
-# 国内网络
+# 直连启动（大多数情况）
 ./xiaohongshu-mcp-darwin-arm64 -port :18060
 
-# 海外网络（需代理）
+# 需要代理时（如公司内网、IP 池等特殊网络场景）
 ./xiaohongshu-mcp-darwin-arm64 -port :18060 -rod "proxy=http://127.0.0.1:7897"
 ```
 
@@ -123,7 +123,7 @@ python scripts/cdp_publish.py search-feeds --keyword "AI创业" --sort-by 最新
 - `check_login_status` 有 DOM 检测 bug，用 `search_feeds` 验证登录态
 - 发布后返回空 PostID 是正常的，用搜索确认
 - **不要重试发布** — 超时不代表失败
-- 海外使用需要加 `-rod "proxy=..."` 参数
+- 如有代理需求（公司内网、IP 池等），可加 `-rod "proxy=..."` 参数
 - `visibility` 必须用中文值
 
 ## 许可证

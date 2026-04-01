@@ -48,7 +48,7 @@ xhs init              # 引导式初始化
 
 `xhs init` 会自动引导你完成:
 1. ✅ 检查系统环境 (MCP 二进制、Chrome、Python)
-2. ✅ 配置网络代理 (交互式，国内直接回车跳过)
+2. ✅ 配置网络代理 (可选，无需代理直接回车跳过)
 3. ✅ 启动 MCP 服务
 4. ✅ 扫码登录小红书
 
@@ -62,8 +62,8 @@ xhs search "关键词"   # 直接用
 ### 手动管理
 
 ```bash
-xhs server start                        # 启动 MCP (海外自动用代理)
-xhs server start --no-proxy             # 国内直连
+xhs server start                        # 启动 MCP
+xhs server start --no-proxy             # 不使用代理直连
 xhs server start --proxy http://...     # 指定代理
 xhs login                               # 登录
 xhs status                              # 检查状态
@@ -254,7 +254,8 @@ xhs config reset               # 重置默认
 xhs server start
 ```
 
-### Q: 海外访问超时?
+### Q: 访问超时?
+如果你的网络环境需要代理（如公司内网、特殊网络等），可配置代理：
 ```bash
 xhs config set mcp.proxy http://127.0.0.1:7897
 xhs server stop
@@ -267,7 +268,7 @@ xhs server start
 xhs search "你的标题"
 ```
 
-### Q: 如何切换国内直连模式?
+### Q: 如何不使用代理直连?
 ```bash
 xhs server start --no-proxy
 ```
