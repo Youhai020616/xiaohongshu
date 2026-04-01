@@ -29,6 +29,9 @@ build/
 # Sources
 sources/
 
+# Docs (internal)
+docs/
+
 # OS
 .DS_Store
 Thumbs.db
