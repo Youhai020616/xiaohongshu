@@ -105,11 +105,18 @@ def get_user_data_dir(account: Optional[str] = None) -> str:
         from account_manager import get_profile_dir
         return get_profile_dir(account)
     except ImportError:
-        # Fallback if account_manager not available
-        local_app_data = os.environ.get("LOCALAPPDATA", "")
-        if not local_app_data:
-            local_app_data = os.path.expanduser("~")
-        return os.path.join(local_app_data, "Google", "Chrome", PROFILE_DIR_NAME)
+        # Fallback if account_manager not available — platform-aware
+        if sys.platform == "win32":
+            base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+            return os.path.join(base, "Google", "Chrome", PROFILE_DIR_NAME)
+        elif sys.platform == "darwin":
+            return os.path.join(os.path.expanduser("~"), "Library",
+                                "Application Support", PROFILE_DIR_NAME)
+        else:
+            # Linux/WSL: XDG convention
+            xdg = os.environ.get("XDG_DATA_HOME",
+                                 os.path.join(os.path.expanduser("~"), ".local", "share"))
+            return os.path.join(xdg, "xiaohongshu", PROFILE_DIR_NAME)
 
 
 def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
@@ -195,7 +202,7 @@ def launch_chrome(
 
     print(
         f"[chrome_launcher] WARNING: Chrome started but port {port} not responding "
-        f"after {STARTUP_TIMEOUT}s. It may still be initializing.",
+        f"after {timeout}s. It may still be initializing.",
         file=sys.stderr,
     )
     return proc

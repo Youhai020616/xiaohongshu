@@ -206,6 +206,10 @@ class MCPClient:
         if proxy:
             env["XHS_PROXY"] = proxy
 
+        # WSL: 传递 no-sandbox 标志给 Go 端 go-rod
+        if _is_wsl_env():
+            env["XHS_NO_SANDBOX"] = "1"
+
         cmd = [MCP_BINARY, "-port", f":{port}"]
 
         # 跨平台后台进程创建
