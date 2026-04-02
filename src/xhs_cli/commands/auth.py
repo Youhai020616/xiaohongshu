@@ -28,6 +28,37 @@ def _is_wsl() -> bool:
     return "WSL_DISTRO_NAME" in os.environ or "wsl" in platform.release().lower()
 
 
+def _is_macos() -> bool:
+    """Detect macOS environment."""
+    return platform.system() == "Darwin"
+
+
+def _has_qrcode_content(result) -> bool:
+    """Check if QR code result actually contains displayable content.
+
+    MCP 有时返回 204 或空内容，此时二维码未真正生成。
+    """
+    if result is None:
+        return False
+    if isinstance(result, dict):
+        content = result.get("content", [])
+        if isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                # 有文本内容
+                if item.get("type") == "text" and item.get("text", "").strip():
+                    return True
+                # 有图片内容
+                if item.get("type") == "image" and item.get("url", "").strip():
+                    return True
+            return False
+        # content 不是 list，检查是否有值
+        return bool(content)
+    # 非 dict，检查字符串是否非空
+    return bool(str(result).strip())
+
+
 @click.command("login", help="登录小红书 (MCP 扫码)")
 @click.option("--account", default=None, help="账号名")
 @click.option("--cdp", is_flag=True, help="使用 CDP 浏览器登录（打开 Chrome 扫码）")
@@ -36,7 +67,7 @@ def login(account, cdp):
     if cdp:
         _login_cdp(account)
     else:
-        _login_mcp()
+        _login_mcp(account=account)
 
 
 def _ensure_mcp_server(cfg: dict) -> MCPClient:
@@ -67,8 +98,8 @@ def _ensure_mcp_server(cfg: dict) -> MCPClient:
         raise SystemExit(1)
 
 
-def _login_mcp():
-    """通过 MCP 获取二维码登录。"""
+def _login_mcp(account: str | None = None):
+    """通过 MCP 获取二维码登录。如果 MCP 二维码获取失败，自动 fallback 到 CDP。"""
     cfg = config.load_config()
 
     # 确保 MCP 服务运行中（自动启动）
@@ -93,6 +124,8 @@ def _login_mcp():
     if is_wsl:
         warning("WSL 环境检测，浏览器启动可能较慢，已自动延长超时时间")
 
+    mcp_failed = False  # 记录 MCP 是否失败，用于决定是否 fallback
+
     for attempt in range(1, max_retries + 1):
         timeout = base_timeout + (attempt - 1) * 120  # 每次重试增加 2 分钟
         if attempt > 1:
@@ -103,6 +136,17 @@ def _login_mcp():
 
         try:
             result = client.get_qrcode(timeout=timeout)
+
+            # 校验二维码内容是否真正生成
+            if not _has_qrcode_content(result):
+                warning("服务端返回了空内容，二维码未成功生成")
+                if attempt < max_retries:
+                    warning(f"正在重试... ({attempt}/{max_retries})")
+                    continue
+                mcp_failed = True
+                break
+
+            # 二维码内容有效
             console.print()
             success("二维码已生成，请使用小红书 App 扫码登录")
             info("打开小红书 App → 左上角扫一扫 → 扫描二维码")
@@ -130,25 +174,58 @@ def _login_mcp():
             if is_timeout and attempt < max_retries:
                 warning(f"获取二维码超时，正在重试... ({attempt}/{max_retries})")
                 continue  # 自动重试
-            elif is_timeout:
-                error("获取二维码超时")
-                info("可能原因: 浏览器启动较慢（WSL/低配机器常见）")
-                if is_wsl:
-                    console.print()
-                    info("[bold yellow]WSL 用户建议:[/]")
-                    info("  1. 确保已安装 Chromium: [bold]sudo apt install chromium-browser[/]")
-                    info("  2. 或安装 Chrome: [bold]sudo apt install google-chrome-stable[/]")
-                    info("  3. 设置浏览器路径: [bold]export ROD_BROWSER_BIN=$(which chromium-browser)[/]")
-                    info("  4. 重启 MCP 服务后重试: [bold]xhs server restart && xhs login[/]")
-                else:
-                    info("如果二维码已弹出，请先扫码登录，然后运行: [bold]xhs status[/] 检查")
-                    info("否则请重试: [bold]xhs login[/]")
             else:
-                error(f"获取二维码失败: {e}")
-                info("请检查 MCP 服务状态: [bold]xhs server status[/]")
-            break
+                mcp_failed = True
+                if is_timeout:
+                    warning("获取二维码超时")
+                else:
+                    warning(f"获取二维码失败: {e}")
+                break
 
-    raise SystemExit(1)
+    # --- MCP 失败，尝试自动 fallback 到 CDP ---
+    if mcp_failed:
+        _fallback_to_cdp(cfg, account, is_wsl)
+
+
+def _fallback_to_cdp(cfg: dict, account: str | None, is_wsl: bool):
+    """MCP 二维码获取失败后，自动 fallback 到 CDP（系统 Chrome）登录。"""
+    console.print()
+
+    if is_wsl:
+        # WSL 用户给出专门建议，不自动 fallback
+        error("MCP 二维码获取失败")
+        info("[bold yellow]WSL 用户建议:[/]")
+        info("  1. 确保已安装 Chromium: [bold]sudo apt install chromium-browser[/]")
+        info("  2. 或安装 Chrome: [bold]sudo apt install google-chrome-stable[/]")
+        info("  3. 设置浏览器路径: [bold]export ROD_BROWSER_BIN=$(which chromium-browser)[/]")
+        info("  4. 重启 MCP 服务后重试: [bold]xhs server restart && xhs login[/]")
+        raise SystemExit(1)
+
+    # macOS / Linux 桌面环境 — 自动尝试 CDP fallback
+    warning("MCP 内置浏览器未能生成二维码，自动切换到系统 Chrome 登录...")
+    console.print()
+
+    try:
+        cdp_client = CDPClient(
+            host=cfg["cdp"]["host"],
+            port=cfg["cdp"]["port"],
+            account=account,
+            headless=False,
+        )
+        output = cdp_client.login()
+        if "LOGIN_READY" in output:
+            success("登录页面已打开，请使用小红书 App 扫码")
+            console.print()
+            info("[bold]扫码成功后，运行 [green]xhs login[/green] 完成 MCP 登录[/]")
+            info("[dim]（CDP 登录仅覆盖数据看板/通知，主要功能需 MCP 登录）[/]")
+        else:
+            console.print(output)
+    except (CDPError, Exception) as e:
+        error(f"CDP 登录也失败: {e}")
+        console.print()
+        info("请检查是否已安装 Google Chrome，或手动执行:")
+        info("  [bold]xhs login --cdp[/]")
+        raise SystemExit(1)
 
 
 def _extract_mcp_text(result) -> str:

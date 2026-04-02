@@ -146,12 +146,19 @@ class MCPClient:
         except requests.RequestException as e:
             raise MCPError(f"MCP 调用失败 ({tool_name}): {e}")
 
+        # Handle 204 No Content or empty body
+        if resp.status_code == 204 or not resp.text.strip():
+            return None
+
         # Parse SSE response or JSON
         content_type = resp.headers.get("Content-Type", "")
         if "text/event-stream" in content_type:
             return self._parse_sse(resp.text)
         else:
-            data = resp.json()
+            try:
+                data = resp.json()
+            except (ValueError, json.JSONDecodeError):
+                raise MCPError(f"MCP 返回无效 JSON ({tool_name}): {resp.text[:200]}")
             if "error" in data:
                 raise MCPError(f"MCP 错误: {data['error']}")
             return data.get("result", data)
