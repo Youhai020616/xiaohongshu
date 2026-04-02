@@ -3,12 +3,14 @@ CDP Client — 封装现有 CDP Python 脚本的调用。
 
 通过 subprocess 调用现有脚本，保持向后兼容。
 """
+
 from __future__ import annotations
 
 import json
 import os
 import subprocess
 import sys
+from typing import Any
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 SCRIPTS_DIR = os.path.join(_PROJECT_ROOT, "scripts")
@@ -54,7 +56,7 @@ class CDPClient:
             args.append("--reuse-existing-tab")
         return args
 
-    def _run(self, cmd: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
+    def _run(self, cmd: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:
         """执行命令，返回结果。"""
         try:
             result = subprocess.run(
@@ -69,7 +71,7 @@ class CDPClient:
         except subprocess.TimeoutExpired:
             raise CDPError(f"命令执行超时 ({timeout}s)")
 
-    def _extract_json(self, output: str, marker: str) -> dict:
+    def _extract_json(self, output: str, marker: str) -> dict[str, Any]:
         """从输出中提取 JSON 数据（marker 后面的部分）。"""
         lines = output.split("\n")
         json_start = None
@@ -143,7 +145,7 @@ class CDPClient:
         sort_by: str | None = None,
         note_type: str | None = None,
         publish_time: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """搜索笔记，返回包含推荐词的完整结果。"""
         cmd = self._base_args() + ["search-feeds", "--keyword", keyword]
         if sort_by:
@@ -162,12 +164,14 @@ class CDPClient:
     # Feed detail
     # ------------------------------------------------------------------
 
-    def get_feed_detail(self, feed_id: str, xsec_token: str) -> dict:
+    def get_feed_detail(self, feed_id: str, xsec_token: str) -> dict[str, Any]:
         """获取笔记详情。"""
         cmd = self._base_args() + [
             "get-feed-detail",
-            "--feed-id", feed_id,
-            "--xsec-token", xsec_token,
+            "--feed-id",
+            feed_id,
+            "--xsec-token",
+            xsec_token,
         ]
         result = self._run(cmd, timeout=60)
         if result.returncode != 0:
@@ -178,13 +182,16 @@ class CDPClient:
     # Comment
     # ------------------------------------------------------------------
 
-    def comment(self, feed_id: str, xsec_token: str, content: str) -> dict:
+    def comment(self, feed_id: str, xsec_token: str, content: str) -> dict[str, Any]:
         """发表评论。"""
         cmd = self._base_args() + [
             "post-comment-to-feed",
-            "--feed-id", feed_id,
-            "--xsec-token", xsec_token,
-            "--content", content,
+            "--feed-id",
+            feed_id,
+            "--xsec-token",
+            xsec_token,
+            "--content",
+            content,
         ]
         result = self._run(cmd, timeout=60)
         if result.returncode != 0:
@@ -192,10 +199,52 @@ class CDPClient:
         return self._extract_json(result.stdout, "POST_COMMENT_RESULT:")
 
     # ------------------------------------------------------------------
+    # Like & Favorite (MCP 回退)
+    # ------------------------------------------------------------------
+
+    def like(self, feed_id: str, xsec_token: str, unlike: bool = False) -> dict[str, Any]:
+        """点赞笔记。
+
+        注意：CDP 模式下 unlike（取消点赞）暂不支持，传 unlike=True 会抛出异常。
+        """
+        if unlike:
+            raise CDPError("CDP 模式暂不支持取消点赞，请使用 MCP 引擎")
+        cmd = self._base_args() + [
+            "like-note",
+            "--feed-id",
+            feed_id,
+            "--xsec-token",
+            xsec_token,
+        ]
+        result = self._run(cmd, timeout=60)
+        if result.returncode != 0:
+            raise CDPError(f"点赞失败: {result.stderr}")
+        return self._extract_json(result.stdout, "LIKE_NOTE_RESULT:")
+
+    def favorite(self, feed_id: str, xsec_token: str, unfavorite: bool = False) -> dict[str, Any]:
+        """收藏笔记。
+
+        注意：CDP 模式下 unfavorite（取消收藏）暂不支持，传 unfavorite=True 会抛出异常。
+        """
+        if unfavorite:
+            raise CDPError("CDP 模式暂不支持取消收藏，请使用 MCP 引擎")
+        cmd = self._base_args() + [
+            "collect-note",
+            "--feed-id",
+            feed_id,
+            "--xsec-token",
+            xsec_token,
+        ]
+        result = self._run(cmd, timeout=60)
+        if result.returncode != 0:
+            raise CDPError(f"收藏失败: {result.stderr}")
+        return self._extract_json(result.stdout, "COLLECT_NOTE_RESULT:")
+
+    # ------------------------------------------------------------------
     # Analytics (MCP 不支持)
     # ------------------------------------------------------------------
 
-    def content_data(self, csv_file: str | None = None, page_size: int = 10) -> dict:
+    def content_data(self, csv_file: str | None = None, page_size: int = 10) -> dict[str, Any]:
         """获取数据看板。"""
         cmd = self._base_args() + ["content-data", "--page-size", str(page_size)]
         if csv_file:
@@ -209,11 +258,12 @@ class CDPClient:
     # Notifications (MCP 不支持)
     # ------------------------------------------------------------------
 
-    def notifications(self, wait_seconds: float = 18.0) -> dict:
+    def notifications(self, wait_seconds: float = 18.0) -> dict[str, Any]:
         """获取通知。"""
         cmd = self._base_args() + [
             "get-notification-mentions",
-            "--wait-seconds", str(wait_seconds),
+            "--wait-seconds",
+            str(wait_seconds),
         ]
         result = self._run(cmd, timeout=int(wait_seconds) + 30)
         if result.returncode != 0:
@@ -236,9 +286,16 @@ class CDPClient:
     ) -> str:
         """通过 CDP 流水线发布内容。"""
         cmd = [
-            sys.executable, PIPELINE_SCRIPT,
-            "--title", title,
-            "--content", content,
+            sys.executable,
+            PIPELINE_SCRIPT,
+            "--host",
+            self.host,
+            "--port",
+            str(self.port),
+            "--title",
+            title,
+            "--content",
+            content,
         ]
         if self.headless:
             cmd.append("--headless")
@@ -262,6 +319,8 @@ class CDPClient:
             cmd.append("--auto-publish")
 
         result = self._run(cmd, timeout=180)
+        if result.returncode != 0:
+            raise CDPError(f"发布失败: {result.stderr.strip() or result.stdout.strip() or '未知错误'}")
         return result.stdout
 
     # ------------------------------------------------------------------

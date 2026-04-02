@@ -1,6 +1,7 @@
 """
 xhs search / detail — 搜索和详情命令。
 """
+
 from __future__ import annotations
 
 import json
@@ -24,18 +25,16 @@ from xhs_cli.utils.output import (
 
 @click.command("search", help="搜索小红书笔记")
 @click.argument("keyword")
-@click.option("--sort", type=click.Choice(["综合", "最新", "最多点赞", "最多评论", "最多收藏"]),
-              default=None, help="排序方式")
-@click.option("--type", "note_type", type=click.Choice(["不限", "视频", "图文"]),
-              default=None, help="笔记类型")
-@click.option("--time", "pub_time", type=click.Choice(["不限", "一天内", "一周内", "半年内"]),
-              default=None, help="发布时间")
-@click.option("--scope", type=click.Choice(["不限", "已看过", "未看过", "已关注"]),
-              default=None, help="搜索范围")
-@click.option("--location", type=click.Choice(["不限", "同城", "附近"]),
-              default=None, help="位置距离")
-@click.option("--engine", type=click.Choice(["auto", "mcp", "cdp"]), default="auto",
-              help="引擎 (cdp 返回推荐词)")
+@click.option(
+    "--sort", type=click.Choice(["综合", "最新", "最多点赞", "最多评论", "最多收藏"]), default=None, help="排序方式"
+)
+@click.option("--type", "note_type", type=click.Choice(["不限", "视频", "图文"]), default=None, help="笔记类型")
+@click.option(
+    "--time", "pub_time", type=click.Choice(["不限", "一天内", "一周内", "半年内"]), default=None, help="发布时间"
+)
+@click.option("--scope", type=click.Choice(["不限", "已看过", "未看过", "已关注"]), default=None, help="搜索范围")
+@click.option("--location", type=click.Choice(["不限", "同城", "附近"]), default=None, help="位置距离")
+@click.option("--engine", type=click.Choice(["auto", "mcp", "cdp"]), default="auto", help="引擎 (cdp 返回推荐词)")
 @click.option("--json-output", "as_json", is_flag=True, help="输出 JSON")
 @click.option("-o", "--output", default=None, help="导出到文件 (.json/.csv)")
 @click.option("--limit", type=int, default=20, help="最大结果数")
@@ -46,19 +45,17 @@ def search(keyword, sort, note_type, pub_time, scope, location, engine, as_json,
     if engine == "auto":
         engine = cfg["default"].get("engine", "auto")
     if engine == "auto":
-        engine = "mcp" if MCPClient.is_running(
-            host=cfg["mcp"]["host"], port=cfg["mcp"]["port"]
-        ) else "cdp"
+        engine = "mcp" if MCPClient.is_running(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"]) else "cdp"
 
     if engine == "mcp":
-        _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_json, output)
+        _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_json, output, limit)
     else:
         if scope or location:
             warning("--scope 和 --location 仅 MCP 引擎支持，CDP 引擎将忽略")
-        _search_cdp(cfg, keyword, sort, note_type, pub_time, as_json, output)
+        _search_cdp(cfg, keyword, sort, note_type, pub_time, as_json, output, limit)
 
 
-def _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_json, output):
+def _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_json, output, limit=20):
     client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
 
     # 构建过滤条件描述用于日志
@@ -89,6 +86,9 @@ def _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_jso
             filters["search_scope"] = scope
         if location:
             filters["location"] = location
+        # 将 limit 加入 filters，由 MCP 服务端控制返回数量
+        if limit:
+            filters["limit"] = limit
         result = client.search(keyword, filters=filters or None)
     except MCPError as e:
         error(f"搜索失败: {e}")
@@ -99,6 +99,8 @@ def _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_jso
         return
 
     feeds = _extract_feeds(result)
+    # 兜底：确保结果数不超过 limit
+    feeds = feeds[:limit]
 
     # 缓存索引 — 支持 xhs read 1 / xhs like 1
     _cache_feeds(feeds)
@@ -110,7 +112,7 @@ def _search_mcp(cfg, keyword, sort, note_type, pub_time, scope, location, as_jso
     print_feeds(feeds, keyword=keyword)
 
 
-def _search_cdp(cfg, keyword, sort, note_type, pub_time, as_json, output):
+def _search_cdp(cfg, keyword, sort, note_type, pub_time, as_json, output, limit=20):
     client = CDPClient(
         host=cfg["cdp"]["host"],
         port=cfg["cdp"]["port"],
@@ -141,6 +143,8 @@ def _search_cdp(cfg, keyword, sort, note_type, pub_time, as_json, output):
         info(f"推荐关键词: {kw_str}")
 
     feeds = result.get("feeds", [])
+    # 兜底：确保结果数不超过 limit
+    feeds = feeds[:limit]
     _cache_feeds(feeds)
 
     if output:
@@ -178,12 +182,16 @@ def _cache_feeds(feeds: list[dict]):
         note_id = feed.get("id") or feed.get("note_id") or ""
         token = feed.get("xsecToken") or feed.get("xsec_token") or ""
         if note_id:
-            entries.append({
-                "note_id": note_id,
-                "xsec_token": token,
-                "desc": (note_card.get("displayTitle") or note_card.get("display_title") or "")[:40],
-                "author": (note_card.get("user", {}).get("nickname") or note_card.get("user", {}).get("nickName") or ""),
-            })
+            entries.append(
+                {
+                    "note_id": note_id,
+                    "xsec_token": token,
+                    "desc": (note_card.get("displayTitle") or note_card.get("display_title") or "")[:40],
+                    "author": (
+                        note_card.get("user", {}).get("nickname") or note_card.get("user", {}).get("nickName") or ""
+                    ),
+                }
+            )
     save_index(entries)
 
 
@@ -194,8 +202,12 @@ def _cache_feeds(feeds: list[dict]):
 @click.option("--comment-limit", type=int, default=20, help="最多加载评论数 (默认 20，需 --comments)")
 @click.option("--expand-replies", is_flag=True, help="展开子评论/二级回复 (需 --comments)")
 @click.option("--reply-limit", type=int, default=10, help="跳过回复数超过此值的评论 (默认 10，需 --expand-replies)")
-@click.option("--scroll-speed", type=click.Choice(["slow", "normal", "fast"]),
-              default=None, help="评论滚动加载速度 (需 --comments)")
+@click.option(
+    "--scroll-speed",
+    type=click.Choice(["slow", "normal", "fast"]),
+    default=None,
+    help="评论滚动加载速度 (需 --comments)",
+)
 @click.option("--engine", type=click.Choice(["auto", "mcp", "cdp"]), default="auto")
 @click.option("--json-output", "as_json", is_flag=True, help="输出 JSON")
 def detail(feed_id, token, comments, comment_limit, expand_replies, reply_limit, scroll_speed, engine, as_json):
@@ -210,6 +222,7 @@ def detail(feed_id, token, comments, comment_limit, expand_replies, reply_limit,
     # 从缓存获取 token
     if resolved != feed_id:
         from xhs_cli.utils.index_cache import get_by_index
+
         entry = get_by_index(int(feed_id))
         if entry and not token:
             token = entry.get("xsec_token", "")
@@ -220,17 +233,19 @@ def detail(feed_id, token, comments, comment_limit, expand_replies, reply_limit,
         raise SystemExit(1)
 
     cfg = config.load_config()
+    # 先检查配置偏好，与 search 命令保持一致
     if engine == "auto":
-        engine = "mcp" if MCPClient.is_running(
-            host=cfg["mcp"]["host"], port=cfg["mcp"]["port"]
-        ) else "cdp"
+        engine = cfg["default"].get("engine", "auto")
+    if engine == "auto":
+        engine = "mcp" if MCPClient.is_running(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"]) else "cdp"
 
     try:
         if engine == "mcp":
             client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
             info("正在获取详情 (MCP)...")
             result = client.get_feed_detail(
-                feed_id, token,
+                feed_id,
+                token,
                 load_all_comments=comments,
                 limit=comment_limit,
                 click_more_replies=expand_replies,
@@ -239,8 +254,10 @@ def detail(feed_id, token, comments, comment_limit, expand_replies, reply_limit,
             )
         else:
             client = CDPClient(
-                host=cfg["cdp"]["host"], port=cfg["cdp"]["port"],
-                headless=True, reuse_tab=True,
+                host=cfg["cdp"]["host"],
+                port=cfg["cdp"]["port"],
+                headless=True,
+                reuse_tab=True,
             )
             info("正在获取详情 (CDP)...")
             result = client.get_feed_detail(feed_id, token)

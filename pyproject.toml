@@ -52,6 +52,23 @@ ignore = ["E402", "E501"]
 [tool.ruff.lint.per-file-ignores]
 "src/xhs_cli/commands/init.py" = ["F401"]
 
+[tool.basedpyright]
+typeCheckingMode = "standard"
+pythonVersion = "3.10"
+exclude = ["**/__pycache__", ".venv", "build", "dist"]
+# scripts/ 是独立 CLI 脚本目录，使用隐式相对导入，单独放宽
+extraPaths = ["scripts"]
+reportImplicitRelativeImport = false
+reportUnusedCallResult = false
+reportAny = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportMissingTypeArgument = false
+reportExplicitAny = false
+reportImplicitStringConcatenation = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

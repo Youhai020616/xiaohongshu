@@ -13,8 +13,23 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PYVER=%%v
-echo ✓ Python: %PYVER%
+:: 检查 Python 版本
+for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set PYVER=%%v
+for /f "tokens=1,2 delims=." %%a in ("%PYVER%") do (
+    set PYMAJOR=%%a
+    set PYMINOR=%%b
+)
+if %PYMAJOR% LSS 3 (
+    echo ✗ Python 版本过低 (%PYVER%)，需要 3.10+
+    pause
+    exit /b 1
+)
+if %PYMAJOR% EQU 3 if %PYMINOR% LSS 10 (
+    echo ✗ Python 版本过低 (%PYVER%)，需要 3.10+
+    pause
+    exit /b 1
+)
+echo ✓ Python %PYVER%
 
 :: 2. 定位项目
 set "PROJECT_DIR=%~dp0"

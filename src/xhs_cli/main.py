@@ -21,17 +21,42 @@ Usage:
     xhs account list|add|remove             多账号
     xhs config show|set|get|reset           配置
 """
+
 from __future__ import annotations
+
+import unicodedata
 
 import click
 
 from xhs_cli import __version__
 
+
+def _display_width(s: str) -> int:
+    """计算字符串的终端显示宽度（宽字符/emoji 占 2 列）。"""
+    w = 0
+    for ch in s:
+        eaw = unicodedata.east_asian_width(ch)
+        if eaw in ("W", "F"):
+            w += 2
+        elif ord(ch) >= 0x1F000:
+            # 大多数 emoji 在终端中占 2 列
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+_INNER_WIDTH = 31
+_ver_text = f"   📕 xhs-cli v{__version__}"
+_cjk_text = "   小红书命令行工具"
+_ver_pad = max(0, _INNER_WIDTH - _display_width(_ver_text))
+_cjk_pad = max(0, _INNER_WIDTH - _display_width(_cjk_text))
+
 BANNER = f"""
-  ╔═══════════════════════════════╗
-  ║   📕 xhs-cli v{__version__}        ║
-  ║   小红书命令行工具            ║
-  ╚═══════════════════════════════╝
+  ╔{"═" * _INNER_WIDTH}╗
+  ║{_ver_text}{" " * _ver_pad}║
+  ║{_cjk_text}{" " * _cjk_pad}║
+  ╚{"═" * _INNER_WIDTH}╝
 """
 
 

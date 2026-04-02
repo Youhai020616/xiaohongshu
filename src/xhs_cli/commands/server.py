@@ -3,6 +3,7 @@ xhs server — MCP 服务管理命令。
 
 支持三种后端: 本地二进制 / Docker / 远程连接。
 """
+
 from __future__ import annotations
 
 import os
@@ -33,6 +34,7 @@ def server_group():
 # ══════════════════════════════════════════════════════
 #  install — 安装二进制
 # ══════════════════════════════════════════════════════
+
 
 @server_group.command("install", help="安装当前平台的 MCP 二进制")
 @click.option("--from-source", is_flag=True, help="从源码编译 (需要 Go 环境)")
@@ -99,6 +101,7 @@ def install(from_source, force):
 #  start — 启动服务 (二进制 / Docker)
 # ══════════════════════════════════════════════════════
 
+
 @server_group.command("start", help="启动 MCP 服务")
 @click.option("--port", type=int, default=None, help="端口号 (默认: 18060)")
 @click.option("--proxy", default=None, help="代理地址")
@@ -152,7 +155,7 @@ def start(port, proxy, no_proxy, docker, auto_install):
         info(f"代理: {proxy_addr}")
 
     try:
-        MCPClient.start_server(port=port, proxy=proxy_addr)
+        MCPClient.start_server(port=port, proxy=proxy_addr or "")
         pid = MCPClient.get_server_pid()
         success(f"MCP 服务已启动 (PID: {pid})")
         status("端口", str(port))
@@ -182,6 +185,7 @@ def _start_docker(port: int, proxy: str | None):
         docker_engine.start(port=port, proxy=proxy)
         # 等待服务就绪
         import time
+
         ready = False
         for i in range(20):
             time.sleep(1)
@@ -208,6 +212,7 @@ def _start_docker(port: int, proxy: str | None):
 # ══════════════════════════════════════════════════════
 #  stop — 停止服务
 # ══════════════════════════════════════════════════════
+
 
 @server_group.command("stop", help="停止 MCP 服务")
 @click.option("--docker", is_flag=True, help="停止 Docker 容器")
@@ -252,6 +257,7 @@ def _stop_docker():
 # ══════════════════════════════════════════════════════
 #  status — 查看状态
 # ══════════════════════════════════════════════════════
+
 
 @server_group.command("status", help="查看 MCP 服务状态")
 @click.option("--port", type=int, default=None, help="端口号")
@@ -300,6 +306,7 @@ def server_status(port):
 # ══════════════════════════════════════════════════════
 #  log — 查看日志
 # ══════════════════════════════════════════════════════
+
 
 @server_group.command("log", help="查看 MCP 服务日志")
 @click.option("-n", "--lines", type=int, default=50, help="显示最后 N 行")

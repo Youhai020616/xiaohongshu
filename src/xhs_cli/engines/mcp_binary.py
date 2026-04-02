@@ -4,6 +4,7 @@ MCP 二进制管理 — 下载 / 编译 / 版本管理。
 支持从 GitHub Releases 自动下载当前平台的预编译二进制，
 或从本地源码编译（需要 Go 环境）。
 """
+
 from __future__ import annotations
 
 import io
@@ -13,6 +14,7 @@ import platform
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 import zipfile
 from typing import Any
@@ -30,6 +32,7 @@ VERSION_FILE = os.path.join(MCP_DIR, ".version.json")
 
 
 # ── 平台检测 ──────────────────────────────────────────────
+
 
 def detect_platform() -> tuple[str, str]:
     """检测当前平台，返回 (os_name, arch_name)。"""
@@ -79,6 +82,7 @@ def is_binary_available() -> bool:
 
 # ── 版本管理 ──────────────────────────────────────────────
 
+
 def get_installed_version() -> dict[str, Any] | None:
     """获取已安装的版本信息。"""
     if not os.path.exists(VERSION_FILE):
@@ -93,16 +97,19 @@ def get_installed_version() -> dict[str, Any] | None:
 def _save_version(tag: str, method: str):
     """保存版本信息。"""
     os.makedirs(MCP_DIR, exist_ok=True)
+    # 只调用一次 detect_platform()，避免重复计算
+    os_name, arch = detect_platform()
     info = {
         "tag": tag,
         "method": method,  # "download" | "build"
-        "platform": f"{detect_platform()[0]}-{detect_platform()[1]}",
+        "platform": f"{os_name}-{arch}",
     }
     with open(VERSION_FILE, "w", encoding="utf-8") as f:
         json.dump(info, f, ensure_ascii=False, indent=2)
 
 
 # ── GitHub Releases 下载 ──────────────────────────────────
+
 
 def fetch_latest_release() -> dict[str, Any]:
     """获取最新 Release 信息。"""
@@ -183,7 +190,11 @@ def download_binary(progress_callback=None) -> str:
                 dest = os.path.realpath(os.path.join(MCP_DIR, member.name))
                 if not dest.startswith(abs_mcp_dir + os.sep) and dest != abs_mcp_dir:
                     raise RuntimeError(f"压缩包路径不安全，拒绝解压: {member.name}")
-            tf.extractall(MCP_DIR)
+            # Python 3.12+ extractall 要求显式指定 filter 参数，否则产生弃用警告
+            if sys.version_info >= (3, 12):
+                tf.extractall(MCP_DIR, filter="data")
+            else:
+                tf.extractall(MCP_DIR)
 
     # 设置可执行权限 (非 Windows)
     if os_name != "windows":
@@ -198,6 +209,7 @@ def download_binary(progress_callback=None) -> str:
 
 
 # ── 源码编译 ──────────────────────────────────────────────
+
 
 def is_go_available() -> bool:
     """检查 Go 编译器是否可用。"""
@@ -279,7 +291,9 @@ def build_from_source(source_dir: str | None = None) -> str:
     try:
         ver = subprocess.run(
             ["git", "describe", "--tags", "--always"],
-            cwd=src, capture_output=True, text=True,
+            cwd=src,
+            capture_output=True,
+            text=True,
         )
         tag = ver.stdout.strip() or "local-build"
     except Exception:
@@ -290,6 +304,7 @@ def build_from_source(source_dir: str | None = None) -> str:
 
 
 # ── 统一安装入口 ──────────────────────────────────────────
+
 
 def ensure_binary(prefer_source: bool = False, progress_callback=None) -> str:
     """

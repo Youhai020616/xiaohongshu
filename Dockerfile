@@ -30,16 +30,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=mcp-base /app/app /app/mcp/xiaohongshu-mcp-linux-amd64
 RUN chmod +x /app/mcp/xiaohongshu-mcp-linux-amd64
 
-# 安装 Python 依赖
-COPY pyproject.toml requirements.txt ./
-RUN pip install --no-cache-dir -e . 2>/dev/null || pip install --no-cache-dir click rich requests websockets PyYAML
+# 先复制依赖清单，利用 Docker 层缓存安装依赖
+COPY pyproject.toml requirements.txt README.md ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制项目文件
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY config/ ./config/
 
-# 安装 CLI
+# 源码就绪后安装 CLI
 RUN pip install --no-cache-dir -e .
 
 # 创建数据目录

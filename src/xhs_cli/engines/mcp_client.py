@@ -3,6 +3,7 @@ MCP Client — 封装小红书 MCP Server 的 JSON-RPC 调用。
 
 自动管理 Session 生命周期，用户无需手动处理 initialize / session-id。
 """
+
 from __future__ import annotations
 
 import json
@@ -39,6 +40,7 @@ def _is_wsl_env() -> bool:
     except Exception:
         pass
     return False
+
 
 # 路径统一由 mcp_binary 模块管理
 MCP_LOG_FILE = os.path.join(MCP_DIR, "mcp.log")
@@ -115,7 +117,11 @@ class MCPClient:
         """发送 JSON-RPC notification（无 id）。"""
         payload = {"jsonrpc": "2.0", "method": method}
         headers = {**self._headers, "Mcp-Session-Id": self.session_id}
-        requests.post(self.base_url, headers=headers, json=payload, timeout=SESSION_TIMEOUT)
+        try:
+            requests.post(self.base_url, headers=headers, json=payload, timeout=SESSION_TIMEOUT)
+        except requests.RequestException:
+            # 通知是尽力而为，失败不影响主流程，防止 session 半初始化崩溃
+            pass
 
     # ------------------------------------------------------------------
     # Low-level call
@@ -125,43 +131,61 @@ class MCPClient:
         """
         调用 MCP 工具，返回结果。
 
-        自动处理 session 初始化和错误。
+        自动处理 session 初始化、失效恢复和错误。
+        Session 失效时（4xx / 连接错误）自动重置并重试一次。
         """
-        self._ensure_session()
+        for attempt in range(2):
+            self._ensure_session()
 
-        payload = {
-            "jsonrpc": "2.0",
-            "id": self._next_id(),
-            "method": "tools/call",
-            "params": {
-                "name": tool_name,
-                "arguments": arguments or {},
-            },
-        }
-        headers = {**self._headers, "Mcp-Session-Id": self.session_id}
+            payload = {
+                "jsonrpc": "2.0",
+                "id": self._next_id(),
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": arguments or {},
+                },
+            }
+            headers = {**self._headers, "Mcp-Session-Id": self.session_id}
 
-        try:
-            resp = requests.post(self.base_url, headers=headers, json=payload, timeout=timeout)
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            raise MCPError(f"MCP 调用失败 ({tool_name}): {e}")
-
-        # Handle 204 No Content or empty body
-        if resp.status_code == 204 or not resp.text.strip():
-            return None
-
-        # Parse SSE response or JSON
-        content_type = resp.headers.get("Content-Type", "")
-        if "text/event-stream" in content_type:
-            return self._parse_sse(resp.text)
-        else:
             try:
-                data = resp.json()
-            except (ValueError, json.JSONDecodeError):
-                raise MCPError(f"MCP 返回无效 JSON ({tool_name}): {resp.text[:200]}")
-            if "error" in data:
-                raise MCPError(f"MCP 错误: {data['error']}")
-            return data.get("result", data)
+                resp = requests.post(self.base_url, headers=headers, json=payload, timeout=timeout)
+            except (requests.ConnectionError, requests.Timeout) as e:
+                # 连接失败时，首次尝试重置 session 后重试
+                if attempt == 0:
+                    self.session_id = None
+                    continue
+                raise MCPError(f"MCP 服务连接失败: {e}")
+            except requests.RequestException as e:
+                raise MCPError(f"MCP 调用失败 ({tool_name}): {e}")
+
+            # Session 失效时（4xx 错误），重置 session 后重试一次
+            if resp.status_code >= 400 and attempt == 0:
+                self.session_id = None
+                continue
+
+            if resp.status_code >= 400:
+                raise MCPError(f"MCP 调用失败 ({tool_name}): HTTP {resp.status_code}")
+
+            # Handle 204 No Content or empty body
+            if resp.status_code == 204 or not resp.text.strip():
+                return None
+
+            # Parse SSE response or JSON
+            content_type = resp.headers.get("Content-Type", "")
+            if "text/event-stream" in content_type:
+                return self._parse_sse(resp.text)
+            else:
+                try:
+                    data = resp.json()
+                except (ValueError, json.JSONDecodeError):
+                    raise MCPError(f"MCP 返回无效 JSON ({tool_name}): {resp.text[:200]}")
+                if "error" in data:
+                    raise MCPError(f"MCP 错误: {data['error']}")
+                return data.get("result", data)
+
+        # 理论上不会到达这里，但作为安全兜底
+        raise MCPError(f"MCP 调用失败 ({tool_name}): 重试耗尽")
 
     def _parse_sse(self, text: str) -> Any:
         """解析 SSE 响应，提取最后一个 data 事件。"""
@@ -183,17 +207,11 @@ class MCPClient:
 
     @staticmethod
     def is_running(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool:
-        """检查 MCP 服务是否正在运行。"""
+        """检查 MCP 服务是否正在运行（仅检测连通性，不创建孤立 session）。"""
         try:
-            resp = requests.post(
-                f"http://{host}:{port}/mcp",
-                headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
-                json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                      "params": {"protocolVersion": "2024-11-05", "capabilities": {},
-                                 "clientInfo": {"name": "probe", "version": "1.0"}}},
-                timeout=5,
-            )
-            return resp.status_code == 200
+            requests.get(f"http://{host}:{port}/mcp", timeout=3)
+            # MCP 服务通常对 GET 返回 405 等状态码，只要不是连接错误就说明在运行
+            return True
         except Exception:
             return False
 
@@ -227,22 +245,24 @@ class MCPClient:
             "cwd": os.path.dirname(MCP_BINARY),
         }
 
-        with open(MCP_LOG_FILE, "a") as log:
-            popen_kwargs["stdout"] = log
-            popen_kwargs["stderr"] = log
+        # 不使用 with 语句，避免句柄提前关闭导致后台进程丢失日志
+        log = open(MCP_LOG_FILE, "a")
+        popen_kwargs["stdout"] = log
+        popen_kwargs["stderr"] = log
 
-            if sys.platform == "win32":
-                # Windows: 隐藏控制台窗口，分离进程
-                CREATE_NO_WINDOW = 0x08000000
-                DETACHED_PROCESS = 0x00000008
-                popen_kwargs["creationflags"] = (
-                    CREATE_NO_WINDOW | DETACHED_PROCESS
-                )
-            else:
-                # macOS / Linux: 新会话，脱离终端
-                popen_kwargs["start_new_session"] = True
+        if sys.platform == "win32":
+            # Windows: 隐藏控制台窗口，分离进程
+            CREATE_NO_WINDOW = 0x08000000
+            DETACHED_PROCESS = 0x00000008
+            popen_kwargs["creationflags"] = CREATE_NO_WINDOW | DETACHED_PROCESS
+        else:
+            # macOS / Linux: 新会话，脱离终端
+            popen_kwargs["start_new_session"] = True
 
-            subprocess.Popen(cmd, **popen_kwargs)
+        subprocess.Popen(cmd, **popen_kwargs)
+
+        # 子进程已继承 fd，父进程端可以安全关闭，避免文件描述符泄漏
+        log.close()
 
         # Wait for startup — WSL/低配环境需要更长时间
         max_wait = 45 if _is_wsl_env() else 15
@@ -251,10 +271,7 @@ class MCPClient:
             if MCPClient.is_running(port=port):
                 return True
 
-        wsl_hint = (
-            "\n  WSL 环境建议: 确保已安装 Chromium (sudo apt install chromium-browser)"
-            if _is_wsl_env() else ""
-        )
+        wsl_hint = "\n  WSL 环境建议: 确保已安装 Chromium (sudo apt install chromium-browser)" if _is_wsl_env() else ""
         raise MCPError(f"MCP 服务启动超时 ({max_wait}s)。{wsl_hint}")
 
     @staticmethod
@@ -267,10 +284,9 @@ class MCPClient:
             if sys.platform == "win32":
                 # Windows: wmic 查找精确的进程名
                 result = subprocess.run(
-                    ["wmic", "process", "where",
-                     f"Name='{binary_name}'",
-                     "get", "ProcessId", "/format:csv"],
-                    capture_output=True, text=True,
+                    ["wmic", "process", "where", f"Name='{binary_name}'", "get", "ProcessId", "/format:csv"],
+                    capture_output=True,
+                    text=True,
                 )
                 for line in result.stdout.strip().split("\n"):
                     line = line.strip()
@@ -288,13 +304,15 @@ class MCPClient:
                 # 使用 -x 精确匹配进程名，避免匹配 Python 自身进程
                 result = subprocess.run(
                     ["pgrep", "-x", binary_name],
-                    capture_output=True, text=True,
+                    capture_output=True,
+                    text=True,
                 )
                 if result.returncode != 0:
                     # -x 匹配失败时回退到 -f 但排除自身
                     result = subprocess.run(
                         ["pgrep", "-f", binary_name],
-                        capture_output=True, text=True,
+                        capture_output=True,
+                        text=True,
                     )
                 for pid_str in result.stdout.strip().split("\n"):
                     pid_str = pid_str.strip()
@@ -315,8 +333,7 @@ class MCPClient:
         try:
             for pid in pids:
                 if sys.platform == "win32":
-                    subprocess.run(["taskkill", "/PID", str(pid), "/F"],
-                                   capture_output=True)
+                    subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
                 else:
                     os.kill(pid, signal.SIGTERM)
 
@@ -332,8 +349,7 @@ class MCPClient:
             for pid in remaining:
                 try:
                     if sys.platform == "win32":
-                        subprocess.run(["taskkill", "/PID", str(pid), "/F"],
-                                       capture_output=True)
+                        subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
                     else:
                         os.kill(pid, signal.SIGKILL)
                 except ProcessLookupError:
@@ -446,24 +462,35 @@ class MCPClient:
         return self.call_tool("get_feed_detail", args, timeout=timeout)
 
     def comment(self, feed_id: str, xsec_token: str, content: str) -> dict:
-        return self.call_tool("post_comment_to_feed", {
-            "feed_id": feed_id, "xsec_token": xsec_token, "content": content,
-        })
+        return self.call_tool(
+            "post_comment_to_feed",
+            {
+                "feed_id": feed_id,
+                "xsec_token": xsec_token,
+                "content": content,
+            },
+        )
 
     def reply(self, feed_id: str, xsec_token: str, comment_id: str, user_id: str, content: str) -> dict:
-        return self.call_tool("reply_comment_in_feed", {
-            "feed_id": feed_id, "xsec_token": xsec_token,
-            "comment_id": comment_id, "user_id": user_id, "content": content,
-        })
+        return self.call_tool(
+            "reply_comment_in_feed",
+            {
+                "feed_id": feed_id,
+                "xsec_token": xsec_token,
+                "comment_id": comment_id,
+                "user_id": user_id,
+                "content": content,
+            },
+        )
 
     def like(self, feed_id: str, xsec_token: str, unlike: bool = False) -> dict:
-        args = {"feed_id": feed_id, "xsec_token": xsec_token}
+        args: dict[str, Any] = {"feed_id": feed_id, "xsec_token": xsec_token}
         if unlike:
             args["unlike"] = True
         return self.call_tool("like_feed", args)
 
     def favorite(self, feed_id: str, xsec_token: str, unfavorite: bool = False) -> dict:
-        args = {"feed_id": feed_id, "xsec_token": xsec_token}
+        args: dict[str, Any] = {"feed_id": feed_id, "xsec_token": xsec_token}
         if unfavorite:
             args["unfavorite"] = True
         return self.call_tool("favorite_feed", args)

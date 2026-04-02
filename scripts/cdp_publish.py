@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 CDP-based Xiaohongshu publisher.
 
@@ -38,17 +39,17 @@ Library usage:
     )
 """
 
+import base64
+import csv
 import json
 import os
 import random
-import time
 import sys
-import csv
-import base64
+import time
 from datetime import datetime
-from zoneinfo import ZoneInfo
-from urllib.parse import parse_qs, urlparse
 from typing import Any
+from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 # Add scripts dir to path so sibling modules can be imported in both
 # "python scripts/cdp_publish.py" and "import scripts.cdp_publish" modes.
@@ -60,18 +61,18 @@ if SCRIPT_DIR not in sys.path:
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # pyright: ignore[reportAttributeAccessIssue]
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # pyright: ignore[reportAttributeAccessIssue]
     except Exception:
         pass
 
 import requests
 import websockets.sync.client as ws_client
-from feed_explorer import (
-    SEARCH_BASE_URL,
+from feed_explorer import (  # pyright: ignore[reportImplicitRelativeImport]
     LOCATION_OPTIONS,
     NOTE_TYPE_OPTIONS,
     PUBLISH_TIME_OPTIONS,
+    SEARCH_BASE_URL,
     SEARCH_SCOPE_OPTIONS,
     SORT_BY_OPTIONS,
     FeedExplorer,
@@ -80,7 +81,7 @@ from feed_explorer import (
     make_feed_detail_url,
     make_search_url,
 )
-from run_lock import SingleInstanceError, single_instance
+from run_lock import SingleInstanceError, single_instance  # pyright: ignore[reportImplicitRelativeImport]
 
 # ---------------------------------------------------------------------------
 # Configuration - centralised selectors and URLs for easy maintenance
@@ -145,9 +146,7 @@ VIDEO_PROCESS_POLL = 3  # seconds between video processing status checks
 ACTION_INTERVAL = 1  # seconds between actions
 MAX_TIMING_JITTER_RATIO = 0.7
 DEFAULT_LOGIN_CACHE_TTL_HOURS = 12.0
-LOGIN_CACHE_FILE = os.path.abspath(
-    os.path.join(SCRIPT_DIR, "..", "tmp", "login_status_cache.json")
-)
+LOGIN_CACHE_FILE = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "tmp", "login_status_cache.json"))
 
 
 def _normalize_timing_jitter(value: float) -> float:
@@ -165,7 +164,8 @@ def _resolve_account_name(account_name: str | None) -> str:
     if account_name and account_name.strip():
         return account_name.strip()
     try:
-        from account_manager import get_default_account
+        from account_manager import get_default_account  # pyright: ignore[reportImplicitRelativeImport]
+
         resolved = get_default_account()
         if isinstance(resolved, str) and resolved.strip():
             return resolved.strip()
@@ -222,22 +222,24 @@ def _map_note_infos_to_content_rows(note_infos: list[dict[str, Any]]) -> list[di
     """Map note_infos payload to content table rows."""
     rows: list[dict[str, Any]] = []
     for note in note_infos:
-        rows.append({
-            "标题": note.get("title") or "-",
-            "发布时间": _format_post_time(note.get("post_time")),
-            "曝光": _metric_or_dash(note, "imp_count"),
-            "观看": _metric_or_dash(note, "read_count"),
-            "封面点击率": _format_cover_click_rate(note.get("coverClickRate")),
-            "点赞": _metric_or_dash(note, "like_count"),
-            "评论": _metric_or_dash(note, "comment_count"),
-            "收藏": _metric_or_dash(note, "fav_count"),
-            "涨粉": _metric_or_dash(note, "increase_fans_count"),
-            "分享": _metric_or_dash(note, "share_count"),
-            "人均观看时长": _format_view_time_avg(note.get("view_time_avg")),
-            "弹幕": _metric_or_dash(note, "danmaku_count"),
-            "操作": "详情数据",
-            "_id": note.get("id") or "",
-        })
+        rows.append(
+            {
+                "标题": note.get("title") or "-",
+                "发布时间": _format_post_time(note.get("post_time")),
+                "曝光": _metric_or_dash(note, "imp_count"),
+                "观看": _metric_or_dash(note, "read_count"),
+                "封面点击率": _format_cover_click_rate(note.get("coverClickRate")),
+                "点赞": _metric_or_dash(note, "like_count"),
+                "评论": _metric_or_dash(note, "comment_count"),
+                "收藏": _metric_or_dash(note, "fav_count"),
+                "涨粉": _metric_or_dash(note, "increase_fans_count"),
+                "分享": _metric_or_dash(note, "share_count"),
+                "人均观看时长": _format_view_time_avg(note.get("view_time_avg")),
+                "弹幕": _metric_or_dash(note, "danmaku_count"),
+                "操作": "详情数据",
+                "_id": note.get("id") or "",
+            }
+        )
     return rows
 
 
@@ -307,7 +309,7 @@ class XiaohongshuPublisher:
             return {"entries": {}}
 
         try:
-            with open(self.login_cache_file, "r", encoding="utf-8") as cache_file:
+            with open(self.login_cache_file, encoding="utf-8") as cache_file:
                 payload = json.load(cache_file)
         except Exception:
             return {"entries": {}}
@@ -411,7 +413,7 @@ class XiaohongshuPublisher:
     # CDP connection management
     # ------------------------------------------------------------------
 
-    def _get_targets(self) -> list[dict]:
+    def _get_targets(self) -> list[dict[str, Any]]:
         """Get list of available browser targets (tabs).
 
         Retries up to 3 times with increasing wait to handle slow Chrome
@@ -431,7 +433,8 @@ class XiaohongshuPublisher:
                             f"[cdp_publish] CDP connection failed ({e}), "
                             f"attempt {attempt + 1}/{max_attempts}, restarting Chrome..."
                         )
-                        from chrome_launcher import ensure_chrome
+                        from chrome_launcher import ensure_chrome  # pyright: ignore[reportImplicitRelativeImport]
+
                         ensure_chrome(port=self.port)
                     else:
                         print(
@@ -444,6 +447,7 @@ class XiaohongshuPublisher:
                     self._sleep(wait, minimum_seconds=float(wait))
                 else:
                     raise CDPError(f"Cannot reach Chrome on {self.host}:{self.port}: {e}")
+        return []
 
     def _find_or_create_tab(
         self,
@@ -458,10 +462,7 @@ class XiaohongshuPublisher:
         to reduce focus switching in headed mode.
         """
         targets = self._get_targets()
-        pages = [
-            t for t in targets
-            if t.get("type") == "page" and t.get("webSocketDebuggerUrl")
-        ]
+        pages = [t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
 
         if target_url_prefix:
             for t in pages:
@@ -470,10 +471,7 @@ class XiaohongshuPublisher:
 
         if reuse_existing_tab and pages:
             url = pages[0].get("url", "")
-            print(
-                "[cdp_publish] Reusing existing tab to reduce focus switching: "
-                f"{url}"
-            )
+            print(f"[cdp_publish] Reusing existing tab to reduce focus switching: {url}")
             return pages[0]["webSocketDebuggerUrl"]
 
         # Create a new tab
@@ -515,13 +513,13 @@ class XiaohongshuPublisher:
     # CDP command helpers
     # ------------------------------------------------------------------
 
-    def _send(self, method: str, params: dict | None = None) -> dict:
+    def _send(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Send a CDP command and return the result."""
         if not self.ws:
             raise CDPError("Not connected. Call connect() first.")
 
         self._msg_id += 1
-        msg = {"id": self._msg_id, "method": method}
+        msg: dict[str, Any] = {"id": self._msg_id, "method": method}
         if params:
             msg["params"] = params
 
@@ -539,11 +537,14 @@ class XiaohongshuPublisher:
 
     def _evaluate(self, expression: str) -> Any:
         """Execute JavaScript in the page and return the result value."""
-        result = self._send("Runtime.evaluate", {
-            "expression": expression,
-            "returnByValue": True,
-            "awaitPromise": True,
-        })
+        result = self._send(
+            "Runtime.evaluate",
+            {
+                "expression": expression,
+                "returnByValue": True,
+                "awaitPromise": True,
+            },
+        )
         remote_obj = result.get("result", {})
         if remote_obj.get("subtype") == "error":
             raise CDPError(f"JS error: {remote_obj.get('description', remote_obj)}")
@@ -666,10 +667,7 @@ class XiaohongshuPublisher:
         # The home domain (www.xiaohongshu.com) shares the .xiaohongshu.com
         # cookie jar but may need a visit to the creator center first so
         # the browser picks up the SSO session cookies.
-        print(
-            "[cdp_publish] Home login not detected. "
-            "Trying SSO propagation from creator center..."
-        )
+        print("[cdp_publish] Home login not detected. Trying SSO propagation from creator center...")
         self._navigate(XHS_CREATOR_LOGIN_CHECK_URL)
         self._sleep(2, minimum_seconds=1.0)
         creator_url = self._evaluate("window.location.href")
@@ -723,14 +721,20 @@ class XiaohongshuPublisher:
         self._send("Network.enable")
         self._send("Network.clearBrowserCookies")
         # Also clear storage
-        self._send("Storage.clearDataForOrigin", {
-            "origin": "https://www.xiaohongshu.com",
-            "storageTypes": "cookies,local_storage,session_storage",
-        })
-        self._send("Storage.clearDataForOrigin", {
-            "origin": "https://creator.xiaohongshu.com",
-            "storageTypes": "cookies,local_storage,session_storage",
-        })
+        self._send(
+            "Storage.clearDataForOrigin",
+            {
+                "origin": "https://www.xiaohongshu.com",
+                "storageTypes": "cookies,local_storage,session_storage",
+            },
+        )
+        self._send(
+            "Storage.clearDataForOrigin",
+            {
+                "origin": "https://creator.xiaohongshu.com",
+                "storageTypes": "cookies,local_storage,session_storage",
+            },
+        )
         self._clear_login_cache()
         print("[cdp_publish] Cookies and storage cleared.")
 
@@ -1064,10 +1068,7 @@ class XiaohongshuPublisher:
 
         if not recommendation_result.get("ok"):
             reason = recommendation_result.get("reason") or "recommend_api_failed"
-            print(
-                "[cdp_publish] Warning: failed to capture search recommendations via API. "
-                f"reason={reason}"
-            )
+            print(f"[cdp_publish] Warning: failed to capture search recommendations via API. reason={reason}")
 
         # Always navigate with keyword URL to keep feed extraction stable.
         search_url = make_search_url(keyword)
@@ -1307,10 +1308,7 @@ class XiaohongshuPublisher:
             self._click_element_by_cdp("comment input box", input_rect_js)
             self._sleep(0.4, minimum_seconds=0.15)
         except CDPError:
-            print(
-                "[cdp_publish] Warning: Could not click comment input via CDP. "
-                "Falling back to direct focus."
-            )
+            print("[cdp_publish] Warning: Could not click comment input via CDP. Falling back to direct focus.")
 
         filled_len = self._fill_comment_content(content)
         self._sleep(0.6, minimum_seconds=0.2)
@@ -1498,9 +1496,8 @@ class XiaohongshuPublisher:
                     break
 
         return {
-            "request_url": result.get("url") or (
-                "https://edith.xiaohongshu.com/api/sns/web/v1/you/mentions?num=20&cursor="
-            ),
+            "request_url": result.get("url")
+            or ("https://edith.xiaohongshu.com/api/sns/web/v1/you/mentions?num=20&cursor="),
             "count": len(items),
             "has_more": data.get("has_more") if isinstance(data, dict) else None,
             "cursor": data.get("cursor") if isinstance(data, dict) else None,
@@ -1576,8 +1573,7 @@ class XiaohongshuPublisher:
                 status = params.get("response", {}).get("status")
                 if status != 200:
                     raise CDPError(
-                        "Notification mentions API responded with non-200 status: "
-                        f"{status}, url={request_url}"
+                        f"Notification mentions API responded with non-200 status: {status}, url={request_url}"
                     )
 
                 target_request_id = request_id
@@ -1586,8 +1582,7 @@ class XiaohongshuPublisher:
 
         if not target_request_id:
             raise CDPError(
-                "Timed out waiting for notification mentions request. "
-                "Please open notification page manually and retry."
+                "Timed out waiting for notification mentions request. Please open notification page manually and retry."
             )
 
         body_result = self._send("Network.getResponseBody", {"requestId": target_request_id})
@@ -1598,10 +1593,7 @@ class XiaohongshuPublisher:
         try:
             payload = json.loads(body_text)
         except json.JSONDecodeError as e:
-            raise CDPError(
-                "Failed to decode notification mentions API JSON: "
-                f"{e}; preview={body_text[:300]}"
-            ) from e
+            raise CDPError(f"Failed to decode notification mentions API JSON: {e}; preview={body_text[:300]}") from e
 
         if not isinstance(payload, dict):
             raise CDPError("Unexpected notification mentions payload structure.")
@@ -1686,10 +1678,7 @@ class XiaohongshuPublisher:
 
                 status = params.get("response", {}).get("status")
                 if status != 200:
-                    raise CDPError(
-                        "Content data API responded with non-200 status: "
-                        f"{status}, url={request_url}"
-                    )
+                    raise CDPError(f"Content data API responded with non-200 status: {status}, url={request_url}")
 
                 target_request_id = request_id
                 target_request_url = request_url
@@ -1697,8 +1686,7 @@ class XiaohongshuPublisher:
 
         if not target_request_id:
             raise CDPError(
-                "Timed out waiting for content data request. "
-                "Please open data-analysis page manually and retry."
+                "Timed out waiting for content data request. Please open data-analysis page manually and retry."
             )
 
         body_result = self._send("Network.getResponseBody", {"requestId": target_request_id})
@@ -1709,10 +1697,7 @@ class XiaohongshuPublisher:
         try:
             payload = json.loads(body_text)
         except json.JSONDecodeError as e:
-            raise CDPError(
-                "Failed to decode content data API JSON: "
-                f"{e}; preview={body_text[:300]}"
-            ) from e
+            raise CDPError(f"Failed to decode content data API JSON: {e}; preview={body_text[:300]}") from e
 
         if not isinstance(payload, dict):
             raise CDPError("Unexpected content data payload structure.")
@@ -1728,11 +1713,7 @@ class XiaohongshuPublisher:
         resolved_page_size = int((query.get("page_size") or ["10"])[0])
         resolved_type = int((query.get("type") or ["0"])[0])
 
-        if (
-            page_num != resolved_page_num
-            or page_size != resolved_page_size
-            or note_type != resolved_type
-        ):
+        if page_num != resolved_page_num or page_size != resolved_page_size or note_type != resolved_type:
             print(
                 "[cdp_publish] Warning: Requested pagination/filter differs from "
                 "captured page request. Returning captured data instead."
@@ -1758,9 +1739,7 @@ class XiaohongshuPublisher:
     def _click_tab(self, tab_selector: str, tab_text: str):
         """Click a publish-mode tab by selector and text content."""
         print(f"[cdp_publish] Clicking '{tab_text}' tab...")
-        selector_alt = (
-            "div.creator-tab, .creator-tab, [class*='creator-tab'], [role='tab'], button, div"
-        )
+        selector_alt = "div.creator-tab, .creator-tab, [class*='creator-tab'], [role='tab'], button, div"
         selector_alt_literal = json.dumps(selector_alt)
         tab_text_literal = json.dumps(tab_text)
 
@@ -1814,16 +1793,10 @@ class XiaohongshuPublisher:
                     f"!!document.querySelector('{SELECTORS['upload_input_alt']}')"
                 )
                 if upload_ready:
-                    print(
-                        "[cdp_publish] '上传图文' tab not found, but upload input is ready. "
-                        "Continuing..."
-                    )
+                    print("[cdp_publish] '上传图文' tab not found, but upload input is ready. Continuing...")
                     return
 
-            raise CDPError(
-                f"Could not find '{tab_text}' tab. "
-                "The page structure may have changed."
-            )
+            raise CDPError(f"Could not find '{tab_text}' tab. The page structure may have changed.")
 
         print(f"[cdp_publish] Tab '{tab_text}' clicked, waiting for upload area...")
         self._sleep(TAB_CLICK_WAIT, minimum_seconds=0.8)
@@ -1857,10 +1830,13 @@ class XiaohongshuPublisher:
         # Try primary selector, then fallback
         node_id = 0
         for selector in (SELECTORS["upload_input"], SELECTORS["upload_input_alt"]):
-            result = self._send("DOM.querySelector", {
-                "nodeId": root_id,
-                "selector": selector,
-            })
+            result = self._send(
+                "DOM.querySelector",
+                {
+                    "nodeId": root_id,
+                    "selector": selector,
+                },
+            )
             node_id = result.get("nodeId", 0)
             if node_id:
                 break
@@ -1872,10 +1848,13 @@ class XiaohongshuPublisher:
             )
 
         # Use DOM.setFileInputFiles to set the files
-        self._send("DOM.setFileInputFiles", {
-            "nodeId": node_id,
-            "files": normalized,
-        })
+        self._send(
+            "DOM.setFileInputFiles",
+            {
+                "nodeId": node_id,
+                "files": normalized,
+            },
+        )
 
         print("[cdp_publish] Images uploaded. Waiting for editor to appear...")
         self._sleep(UPLOAD_WAIT, minimum_seconds=2.0)
@@ -1895,25 +1874,28 @@ class XiaohongshuPublisher:
         # Find the file input for video upload
         node_id = 0
         for selector in (SELECTORS["upload_input"], SELECTORS["upload_input_alt"]):
-            result = self._send("DOM.querySelector", {
-                "nodeId": root_id,
-                "selector": selector,
-            })
+            result = self._send(
+                "DOM.querySelector",
+                {
+                    "nodeId": root_id,
+                    "selector": selector,
+                },
+            )
             node_id = result.get("nodeId", 0)
             if node_id:
                 break
 
         if not node_id:
-            raise CDPError(
-                "Could not find file input element for video upload.\n"
-                "The page structure may have changed."
-            )
+            raise CDPError("Could not find file input element for video upload.\nThe page structure may have changed.")
 
         # Set the video file
-        self._send("DOM.setFileInputFiles", {
-            "nodeId": node_id,
-            "files": [normalized],
-        })
+        self._send(
+            "DOM.setFileInputFiles",
+            {
+                "nodeId": node_id,
+                "files": [normalized],
+            },
+        )
 
         print("[cdp_publish] Video file submitted. Waiting for processing...")
 
@@ -1939,7 +1921,8 @@ class XiaohongshuPublisher:
                     return
 
             # Try to read progress text for user feedback
-            pct = self._evaluate("""
+            pct = (
+                self._evaluate("""
                 (function() {
                     // Look for progress percentage text
                     var els = document.querySelectorAll(
@@ -1951,7 +1934,9 @@ class XiaohongshuPublisher:
                     }
                     return '';
                 })()
-            """) or ""
+            """)
+                or ""
+            )
             if pct and pct != last_pct:
                 print(f"[cdp_publish] Video processing: {pct}")
                 last_pct = pct
@@ -2002,13 +1987,20 @@ class XiaohongshuPublisher:
                     (function() {{
                         var el = document.querySelector('{selector}');
                         el.focus();
+                        function escapeHtml(text) {{
+                            return text
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;');
+                        }}
                         var text = {escaped};
-                        var paragraphs = text.split('\\n').filter(function(p) {{ return p.trim(); }});
+                        var paragraphs = text.split('\\n');
                         var html = [];
                         for (var i = 0; i < paragraphs.length; i++) {{
-                            html.push('<p>' + paragraphs[i] + '</p>');
-                            if (i < paragraphs.length - 1) {{
+                            if (!paragraphs[i].trim()) {{
                                 html.push('<p><br></p>');
+                            }} else {{
+                                html.push('<p>' + escapeHtml(paragraphs[i]) + '</p>');
                             }}
                         }}
                         el.innerHTML = html.join('');
@@ -2092,24 +2084,76 @@ class XiaohongshuPublisher:
 
         return collected
 
+    def like_note(self, feed_id: str, xsec_token: str) -> dict[str, Any]:
+        """Navigate to note page and like it. Returns result dict."""
+        feed_id = feed_id.strip()
+        xsec_token = xsec_token.strip()
+        if not feed_id:
+            raise CDPError("feed_id cannot be empty.")
+        if not xsec_token:
+            raise CDPError("xsec_token cannot be empty.")
+
+        detail_url = make_feed_detail_url(feed_id, xsec_token)
+        self._navigate(detail_url)
+        self._sleep(2, minimum_seconds=1.0)
+
+        # Check if page is accessible
+        self._check_feed_page_accessible()
+
+        liked = self._like_note()
+        return {
+            "feed_id": feed_id,
+            "liked": liked,
+            "message": "点赞成功" if liked else "未找到点赞按钮或已点赞",
+        }
+
+    def collect_note(self, feed_id: str, xsec_token: str) -> dict[str, Any]:
+        """Navigate to note page and collect/favorite it. Returns result dict."""
+        feed_id = feed_id.strip()
+        xsec_token = xsec_token.strip()
+        if not feed_id:
+            raise CDPError("feed_id cannot be empty.")
+        if not xsec_token:
+            raise CDPError("xsec_token cannot be empty.")
+
+        detail_url = make_feed_detail_url(feed_id, xsec_token)
+        self._navigate(detail_url)
+        self._sleep(2, minimum_seconds=1.0)
+
+        # Check if page is accessible
+        self._check_feed_page_accessible()
+
+        collected = self._collect_note()
+        return {
+            "feed_id": feed_id,
+            "collected": collected,
+            "message": "收藏成功" if collected else "未找到收藏按钮或已收藏",
+        }
+
     def _move_mouse(self, x: float, y: float):
         """Move mouse cursor via CDP to support hover-driven UI."""
-        self._send("Input.dispatchMouseEvent", {
-            "type": "mouseMoved",
-            "x": float(x),
-            "y": float(y),
-        })
+        self._send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseMoved",
+                "x": float(x),
+                "y": float(y),
+            },
+        )
 
     def _click_mouse(self, x: float, y: float):
         """Perform a real left-click via CDP at the given coordinates."""
         for event_type in ("mousePressed", "mouseReleased"):
-            self._send("Input.dispatchMouseEvent", {
-                "type": event_type,
-                "x": float(x),
-                "y": float(y),
-                "button": "left",
-                "clickCount": 1,
-            })
+            self._send(
+                "Input.dispatchMouseEvent",
+                {
+                    "type": event_type,
+                    "x": float(x),
+                    "y": float(y),
+                    "button": "left",
+                    "clickCount": 1,
+                },
+            )
             time.sleep(0.05)
 
     def _click_element_by_cdp(self, description: str, js_get_rect: str):
@@ -2125,10 +2169,7 @@ class XiaohongshuPublisher:
         """
         rect = self._evaluate(js_get_rect)
         if not rect:
-            raise CDPError(
-                f"Could not find {description}. "
-                "Please click it manually in the browser."
-            )
+            raise CDPError(f"Could not find {description}. Please click it manually in the browser.")
 
         # Compute center of the element
         cx = rect["x"] + rect["width"] / 2
@@ -2137,13 +2178,16 @@ class XiaohongshuPublisher:
 
         # Dispatch a full mouse click sequence via CDP
         for event_type in ("mousePressed", "mouseReleased"):
-            self._send("Input.dispatchMouseEvent", {
-                "type": event_type,
-                "x": cx,
-                "y": cy,
-                "button": "left",
-                "clickCount": 1,
-            })
+            self._send(
+                "Input.dispatchMouseEvent",
+                {
+                    "type": event_type,
+                    "x": cx,
+                    "y": cy,
+                    "button": "left",
+                    "clickCount": 1,
+                },
+            )
             time.sleep(0.05)
 
     def _click_publish(self):
@@ -2251,10 +2295,7 @@ class XiaohongshuPublisher:
         # Step 5: Fill content
         self._fill_content(content)
 
-        print(
-            "\n[cdp_publish] Content has been filled in.\n"
-            "  Please review in the browser before publishing.\n"
-        )
+        print("\n[cdp_publish] Content has been filled in.\n  Please review in the browser before publishing.\n")
 
     def publish_video(
         self,
@@ -2298,19 +2339,18 @@ class XiaohongshuPublisher:
         # Step 5: Fill content
         self._fill_content(content)
 
-        print(
-            "\n[cdp_publish] Video content has been filled in.\n"
-            "  Please review in the browser before publishing.\n"
-        )
+        print("\n[cdp_publish] Video content has been filled in.\n  Please review in the browser before publishing.\n")
 
 
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
     import argparse
-    from chrome_launcher import ensure_chrome, restart_chrome
+
+    from chrome_launcher import ensure_chrome, restart_chrome  # pyright: ignore[reportImplicitRelativeImport]
 
     parser = argparse.ArgumentParser(description="Xiaohongshu CDP Publisher")
     parser.add_argument(
@@ -2318,19 +2358,14 @@ def main():
         default=CDP_HOST,
         help=f"CDP host (default: {CDP_HOST})",
     )
-    parser.add_argument("--port", type=int, default=CDP_PORT,
-                        help=f"CDP remote debugging port (default: {CDP_PORT})")
-    parser.add_argument("--headless", action="store_true",
-                        help="Use headless Chrome (no GUI window)")
+    parser.add_argument("--port", type=int, default=CDP_PORT, help=f"CDP remote debugging port (default: {CDP_PORT})")
+    parser.add_argument("--headless", action="store_true", help="Use headless Chrome (no GUI window)")
     parser.add_argument("--account", help="Account name to use (default: default account)")
     parser.add_argument(
         "--timing-jitter",
         type=float,
         default=0.25,
-        help=(
-            "Timing jitter ratio for operation delays (default: 0.25). "
-            "Set 0 to disable random jitter."
-        ),
+        help=("Timing jitter ratio for operation delays (default: 0.25). Set 0 to disable random jitter."),
     )
     parser.add_argument(
         "--reuse-existing-tab",
@@ -2451,6 +2486,24 @@ def main():
         help="Optional CSV output path",
     )
 
+    # like-note - like a note by feed id
+    p_like = sub.add_parser(
+        "like-note",
+        aliases=["like_note"],
+        help="Like a note by feed id and xsec token",
+    )
+    p_like.add_argument("--feed-id", required=True, help="Feed id")
+    p_like.add_argument("--xsec-token", required=True, help="xsec token")
+
+    # collect-note - collect/favorite a note by feed id
+    p_collect = sub.add_parser(
+        "collect-note",
+        aliases=["collect_note"],
+        help="Collect (favorite) a note by feed id and xsec token",
+    )
+    p_collect.add_argument("--feed-id", required=True, help="Feed id")
+    p_collect.add_argument("--xsec-token", required=True, help="xsec token")
+
     # login - open browser for QR code login (always headed)
     sub.add_parser("login", help="Open browser for QR code login (always headed mode)")
 
@@ -2458,8 +2511,7 @@ def main():
     sub.add_parser("re-login", help="Clear cookies and re-login same account (always headed)")
 
     # switch-account - clear cookies and open login page (always headed)
-    sub.add_parser("switch-account",
-                   help="Clear cookies and open login page for new account (always headed)")
+    sub.add_parser("switch-account", help="Clear cookies and open login page for new account (always headed)")
 
     # list-accounts - list all configured accounts
     sub.add_parser("list-accounts", help="List all configured accounts")
@@ -2472,8 +2524,7 @@ def main():
     # remove-account - remove an account
     p_rm = sub.add_parser("remove-account", help="Remove an account")
     p_rm.add_argument("name", help="Account name to remove")
-    p_rm.add_argument("--delete-profile", action="store_true",
-                      help="Also delete the Chrome profile directory")
+    p_rm.add_argument("--delete-profile", action="store_true", help="Also delete the Chrome profile directory")
 
     # set-default-account - set default account
     p_def = sub.add_parser("set-default-account", help="Set the default account")
@@ -2490,13 +2541,11 @@ def main():
     local_mode = _is_local_host(host)
 
     if timing_jitter != args.timing_jitter:
-        print(
-            "[cdp_publish] Warning: --timing-jitter out of range. "
-            f"Clamped to {timing_jitter:.2f}."
-        )
+        print(f"[cdp_publish] Warning: --timing-jitter out of range. Clamped to {timing_jitter:.2f}.")
     # Account management commands that don't need Chrome
     if args.command == "list-accounts":
-        from account_manager import list_accounts
+        from account_manager import list_accounts  # pyright: ignore[reportImplicitRelativeImport]
+
         accounts = list_accounts()
         if not accounts:
             print("No accounts configured.")
@@ -2509,7 +2558,8 @@ def main():
         return
 
     elif args.command == "add-account":
-        from account_manager import add_account, get_profile_dir
+        from account_manager import add_account, get_profile_dir  # pyright: ignore[reportImplicitRelativeImport]
+
         if add_account(args.name, args.alias):
             print(f"Account '{args.name}' added.")
             print(f"Profile dir: {get_profile_dir(args.name)}")
@@ -2521,7 +2571,8 @@ def main():
         return
 
     elif args.command == "remove-account":
-        from account_manager import remove_account
+        from account_manager import remove_account  # pyright: ignore[reportImplicitRelativeImport]
+
         if remove_account(args.name, args.delete_profile):
             print(f"Account '{args.name}' removed.")
         else:
@@ -2530,7 +2581,8 @@ def main():
         return
 
     elif args.command == "set-default-account":
-        from account_manager import set_default_account
+        from account_manager import set_default_account  # pyright: ignore[reportImplicitRelativeImport]
+
         if set_default_account(args.name):
             print(f"Default account set to '{args.name}'.")
         else:
@@ -2547,10 +2599,7 @@ def main():
             print("Failed to start Chrome. Exiting.")
             sys.exit(1)
     else:
-        print(
-            f"[cdp_publish] Remote CDP mode enabled: {host}:{port}. "
-            "Skipping local Chrome launch/restart."
-        )
+        print(f"[cdp_publish] Remote CDP mode enabled: {host}:{port}. Skipping local Chrome launch/restart.")
 
     print(f"[cdp_publish] Timing jitter ratio: {timing_jitter:.2f}")
     print(f"[cdp_publish] Login cache: enabled (ttl={DEFAULT_LOGIN_CACHE_TTL_HOURS:g}h).")
@@ -2585,13 +2634,9 @@ def main():
 
             publisher.connect(reuse_existing_tab=reuse_existing_tab)
             if getattr(args, "video", None):
-                publisher.publish_video(
-                    title=args.title, content=content, video_path=args.video
-                )
+                publisher.publish_video(title=args.title, content=content, video_path=args.video)
             else:
-                publisher.publish(
-                    title=args.title, content=content, image_paths=args.images
-                )
+                publisher.publish(title=args.title, content=content, image_paths=args.images)
             print("FILL_STATUS: READY_TO_PUBLISH")
 
             if args.command == "publish":
@@ -2696,6 +2741,32 @@ def main():
                     rows=payload.get("rows", []),
                 )
                 print(f"CONTENT_DATA_CSV: {csv_path}")
+
+        elif args.command in ("like-note", "like_note"):
+            publisher.connect(reuse_existing_tab=reuse_existing_tab)
+            if not publisher.check_home_login():
+                print("NOT_LOGGED_IN")
+                sys.exit(1)
+
+            payload = publisher.like_note(
+                feed_id=args.feed_id,
+                xsec_token=args.xsec_token,
+            )
+            print("LIKE_NOTE_RESULT:")
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+        elif args.command in ("collect-note", "collect_note"):
+            publisher.connect(reuse_existing_tab=reuse_existing_tab)
+            if not publisher.check_home_login():
+                print("NOT_LOGGED_IN")
+                sys.exit(1)
+
+            payload = publisher.collect_note(
+                feed_id=args.feed_id,
+                xsec_token=args.xsec_token,
+            )
+            print("COLLECT_NOTE_RESULT:")
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
 
         elif args.command == "login":
             # Ensure headed mode for QR scanning

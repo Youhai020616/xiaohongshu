@@ -1,6 +1,7 @@
 """
 xhs me / profile — 用户信息命令。
 """
+
 from __future__ import annotations
 
 import click
@@ -89,7 +90,16 @@ def _extract_text(result) -> str:
 def profile(user_id, token, as_json):
     """查看任意用户的主页信息和笔记。"""
     cfg = config.load_config()
-    client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
+    host = cfg["mcp"]["host"]
+    port = cfg["mcp"]["port"]
+
+    # 先检查 MCP 服务是否运行，避免直接报连接错误
+    if not MCPClient.is_running(host=host, port=port):
+        error("MCP 服务未运行")
+        info("请先启动服务: [bold]xhs server start[/]")
+        raise SystemExit(1)
+
+    client = MCPClient(host=host, port=port)
 
     info(f"正在获取用户资料: {user_id}")
     try:

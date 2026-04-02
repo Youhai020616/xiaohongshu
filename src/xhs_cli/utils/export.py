@@ -1,6 +1,7 @@
 """
 导出工具 — 将列表数据导出为 JSON / CSV 文件。
 """
+
 from __future__ import annotations
 
 import csv
@@ -48,6 +49,7 @@ def _export_csv(data: list[dict], path: str) -> None:
 def _export_yaml(data: list[dict], path: str) -> None:
     try:
         import yaml
+
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
     except ImportError:
@@ -58,7 +60,7 @@ def _flatten(d: dict, prefix: str = "") -> dict:
     """将嵌套 dict 展平为单层 (用于 CSV)。"""
     items: dict[str, Any] = {}
     for k, v in d.items():
-        key = f"{prefix}{k}" if not prefix else f"{prefix}.{k}"
+        key = f"{prefix}.{k}" if prefix else k
         if isinstance(v, dict):
             items.update(_flatten(v, key))
         elif isinstance(v, list):

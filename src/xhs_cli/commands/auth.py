@@ -1,11 +1,13 @@
 """
 xhs login / logout / status — 认证命令。
 """
+
 from __future__ import annotations
 
 import os
 import platform
 import time
+from typing import Any
 
 import click
 
@@ -70,7 +72,7 @@ def login(account, cdp):
         _login_mcp(account=account)
 
 
-def _ensure_mcp_server(cfg: dict) -> MCPClient:
+def _ensure_mcp_server(cfg: dict[str, Any]) -> MCPClient:
     """确保 MCP 服务运行中，返回可用的 client。"""
     host = cfg["mcp"]["host"]
     port = cfg["mcp"]["port"]
@@ -187,7 +189,7 @@ def _login_mcp(account: str | None = None):
         _fallback_to_cdp(cfg, account, is_wsl)
 
 
-def _fallback_to_cdp(cfg: dict, account: str | None, is_wsl: bool):
+def _fallback_to_cdp(cfg: dict[str, Any], account: str | None, is_wsl: bool):
     """MCP 二维码获取失败后，自动 fallback 到 CDP（系统 Chrome）登录。"""
     console.print()
 
@@ -290,6 +292,10 @@ def logout(engine):
         except MCPError as e:
             if engine == "mcp":
                 error(f"MCP 退出失败: {e}")
+                raise SystemExit(1)
+            else:
+                # engine == "all" 时不中断流程，但告知用户 MCP 退出失败
+                warning(f"MCP 退出失败（已跳过）: {e}")
 
     if engine in ("cdp", "all"):
         info("CDP 登录态需要手动清除（运行 xhs login --cdp 重新登录）")
@@ -334,9 +340,7 @@ def auth_status():
 
     # MCP status
     mcp_logged_in = False
-    mcp_running = MCPClient.is_running(
-        host=cfg["mcp"]["host"], port=cfg["mcp"]["port"]
-    )
+    mcp_running = MCPClient.is_running(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
     if mcp_running:
         try:
             client = MCPClient(host=cfg["mcp"]["host"], port=cfg["mcp"]["port"])
@@ -362,8 +366,11 @@ def auth_status():
             reuse_tab=True,
         )
         cdp_logged_in = cdp.check_login()
-        status("CDP", "已登录  ← 数据看板/通知" if cdp_logged_in else "未登录  ← 数据看板/通知",
-               "green" if cdp_logged_in else "yellow")
+        status(
+            "CDP",
+            "已登录  ← 数据看板/通知" if cdp_logged_in else "未登录  ← 数据看板/通知",
+            "green" if cdp_logged_in else "yellow",
+        )
     except Exception:
         status("CDP", "Chrome 未启动  ← 数据看板/通知", "dim")
 

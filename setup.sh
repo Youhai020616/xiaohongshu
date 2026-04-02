@@ -32,7 +32,7 @@ for cmd in python3 python; do
         version=$("$cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
         major=$(echo "$version" | cut -d. -f1)
         minor=$(echo "$version" | cut -d. -f2)
-        if [ "$major" -ge 3 ] && [ "$minor" -ge 9 ]; then
+        if [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 10 ]; }; then
             PYTHON="$cmd"
             break
         fi
@@ -40,7 +40,7 @@ for cmd in python3 python; do
 done
 
 if [ -z "$PYTHON" ]; then
-    fail "需要 Python 3.9+，请先安装: brew install python3"
+    fail "需要 Python 3.10+，请先安装: brew install python3"
 fi
 success "Python: $($PYTHON --version)"
 
@@ -108,7 +108,8 @@ fi
 
 # ── 7. 生成激活脚本 ──────────────────────────────────
 ACTIVATE_SCRIPT="$PROJECT_DIR/activate.sh"
-cat > "$ACTIVATE_SCRIPT" << 'EOF'
+if [ ! -f "$ACTIVATE_SCRIPT" ]; then
+    cat > "$ACTIVATE_SCRIPT" << 'EOF'
 #!/usr/bin/env bash
 # 激活 xhs-cli 环境
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -119,7 +120,8 @@ else
 fi
 echo "📕 xhs-cli 环境已激活，输入 xhs --help 开始使用"
 EOF
-chmod +x "$ACTIVATE_SCRIPT"
+    chmod +x "$ACTIVATE_SCRIPT"
+fi
 
 # ── 完成 ─────────────────────────────────────────────
 echo ""

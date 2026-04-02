@@ -1,6 +1,7 @@
 """
 xhs publish — 发布命令（自动选择最优引擎）。
 """
+
 from __future__ import annotations
 
 import os
@@ -20,16 +21,30 @@ from xhs_cli.utils.output import console, error, info, success, warning
 @click.option("--images", "-i", multiple=True, help="图片路径或 URL (可多个)")
 @click.option("--video", "-v", default=None, help="视频文件路径")
 @click.option("--tags", multiple=True, help="标签 (可多个，如: --tags 旅行 --tags 美食)")
-@click.option("--visibility", type=click.Choice(["公开可见", "仅自己可见", "仅互关好友可见"]),
-              default="公开可见", help="可见范围")
+@click.option(
+    "--visibility", type=click.Choice(["公开可见", "仅自己可见", "仅互关好友可见"]), default="公开可见", help="可见范围"
+)
 @click.option("--original", is_flag=True, help="声明原创")
 @click.option("--schedule", default=None, help="定时发布 (ISO 8601, 如 2026-03-15T10:30:00+08:00)")
 @click.option("--products", multiple=True, help="商品关键词 (可多个，如: --products 面膜 --products 防晒霜)")
-@click.option("--engine", type=click.Choice(["auto", "mcp", "cdp"]), default="auto",
-              help="指定引擎 (默认自动选择)")
+@click.option("--engine", type=click.Choice(["auto", "mcp", "cdp"]), default="auto", help="指定引擎 (默认自动选择)")
 @click.option("--account", default=None, help="使用指定账号")
 @click.option("--dry-run", is_flag=True, help="预览模式，不实际发布")
-def publish(title, content, content_file, images, video, tags, visibility, original, schedule, products, engine, account, dry_run):
+def publish(
+    title,
+    content,
+    content_file,
+    images,
+    video,
+    tags,
+    visibility,
+    original,
+    schedule,
+    products,
+    engine,
+    account,
+    dry_run,
+):
     """发布图文或视频笔记。"""
 
     # 处理正文
@@ -102,6 +117,12 @@ def publish(title, content, content_file, images, video, tags, visibility, origi
     else:
         if products:
             warning("--products 仅 MCP 引擎支持，CDP 引擎将忽略")
+        if visibility and visibility != "公开可见":
+            warning(f"--visibility '{visibility}' 仅 MCP 引擎支持，CDP 引擎将以默认可见范围发布")
+        if schedule:
+            warning("--schedule 仅 MCP 引擎支持，CDP 引擎将立即发布")
+        if original:
+            warning("--original 仅 MCP 引擎支持，CDP 引擎将忽略")
         _publish_cdp(cfg, title, content, images, video, tags, account)
 
 

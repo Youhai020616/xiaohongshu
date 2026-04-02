@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Unified publish pipeline for Xiaohongshu.
 
@@ -48,22 +49,20 @@ import time
 # Ensure UTF-8 output on Windows consoles
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 # Add scripts dir to path so sibling modules can be imported
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
+from cdp_publish import CDPError, XiaohongshuPublisher
 from chrome_launcher import ensure_chrome, restart_chrome
-from cdp_publish import XiaohongshuPublisher, CDPError
 from image_downloader import ImageDownloader
 from run_lock import SingleInstanceError, single_instance
-
 
 MAX_TIMING_JITTER_RATIO = 0.7
 
@@ -84,6 +83,7 @@ def _resolve_account_name(account_name: str | None) -> str:
         return account_name.strip()
     try:
         from account_manager import get_default_account
+
         resolved = get_default_account()
         if isinstance(resolved, str) and resolved.strip():
             return resolved.strip()
@@ -272,16 +272,11 @@ def _select_topics(
             time.sleep(_jitter_seconds(0.45, timing_jitter, minimum_seconds=0.2))
 
     if failed_tags:
-        print(
-            "[pipeline] Warning: Some topic tags were not selected: "
-            f"{', '.join(failed_tags)}"
-        )
+        print(f"[pipeline] Warning: Some topic tags were not selected: {', '.join(failed_tags)}")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Xiaohongshu publish pipeline - unified entry point"
-    )
+    parser = argparse.ArgumentParser(description="Xiaohongshu publish pipeline - unified entry point")
 
     # Title
     title_group = parser.add_mutually_exclusive_group(required=True)
@@ -295,18 +290,10 @@ def main():
 
     # Media: images OR video (mutually exclusive)
     media_group = parser.add_mutually_exclusive_group(required=True)
-    media_group.add_argument(
-        "--image-urls", nargs="+", help="Image URLs to download"
-    )
-    media_group.add_argument(
-        "--images", nargs="+", help="Local image file paths"
-    )
-    media_group.add_argument(
-        "--video", help="Local video file path"
-    )
-    media_group.add_argument(
-        "--video-url", help="Video URL to download"
-    )
+    media_group.add_argument("--image-urls", nargs="+", help="Image URLs to download")
+    media_group.add_argument("--images", nargs="+", help="Local image file paths")
+    media_group.add_argument("--video", help="Local video file path")
+    media_group.add_argument("--video-url", help="Video URL to download")
 
     # Publish mode
     parser.add_argument(
@@ -335,10 +322,7 @@ def main():
         "--timing-jitter",
         type=float,
         default=0.25,
-        help=(
-            "Timing jitter ratio for operation delays (default: 0.25). "
-            "Set 0 to disable random jitter."
-        ),
+        help=("Timing jitter ratio for operation delays (default: 0.25). Set 0 to disable random jitter."),
     )
 
     parser.add_argument(
@@ -389,10 +373,7 @@ def main():
     local_mode = _is_local_host(host)
 
     if timing_jitter != args.timing_jitter:
-        print(
-            "[pipeline] Warning: --timing-jitter out of range. "
-            f"Clamped to {timing_jitter:.2f}."
-        )
+        print(f"[pipeline] Warning: --timing-jitter out of range. Clamped to {timing_jitter:.2f}.")
 
     # --- Resolve title ---
     if args.title_file:
@@ -418,145 +399,141 @@ def main():
 
     content, topic_tags = _extract_topic_tags_from_last_line(content)
     if topic_tags:
-        print(
-            "[pipeline] Detected topic tags from last line: "
-            f"{' '.join(topic_tags)}"
-        )
+        print(f"[pipeline] Detected topic tags from last line: {' '.join(topic_tags)}")
 
-    # --- Step 1: Ensure Chrome is running ---
-    mode_label = "headless" if headless else "headed"
-    account_label = cache_account_name
-    print(
-        f"[pipeline] Step 1: Ensuring Chrome is running "
-        f"({mode_label}, account: {account_label}, host: {host}, port: {port})..."
-    )
-    print(f"[pipeline] Timing jitter ratio: {timing_jitter:.2f}")
-    if reuse_existing_tab:
-        print("[pipeline] Tab selection mode: prefer reusing existing tab.")
-    if local_mode:
-        if not ensure_chrome(port=port, headless=headless, account=account):
-            print("Error: Failed to start Chrome.", file=sys.stderr)
-            sys.exit(2)
-    else:
-        print(
-            f"[pipeline] Remote CDP mode enabled: {host}:{port}. "
-            "Skipping local Chrome launch/restart."
-        )
-
-    # --- Step 2: Connect and check login ---
-    print("[pipeline] Step 2: Checking login status...")
-    publisher = XiaohongshuPublisher(
-        host=host,
-        port=port,
-        timing_jitter=timing_jitter,
-        account_name=cache_account_name,
-    )
+    # --- 获取单实例锁，防止多进程同时操作 Chrome ---
     try:
-        publisher.connect(reuse_existing_tab=reuse_existing_tab)
-        logged_in = publisher.check_login()
-        if not logged_in:
-            publisher.disconnect()
-            if headless:
-                if local_mode:
-                    # Auto-fallback: restart Chrome in headed mode for QR login
-                    print("[pipeline] Headless mode: not logged in. Switching to headed mode for login...")
-                    restart_chrome(port=port, headless=False, account=account)
-                    publisher.connect(reuse_existing_tab=reuse_existing_tab)
-                    publisher.open_login_page()
+        with single_instance("xhs_publish_pipeline"):
+            # --- Step 1: Ensure Chrome is running ---
+            mode_label = "headless" if headless else "headed"
+            account_label = cache_account_name
+            print(
+                f"[pipeline] Step 1: Ensuring Chrome is running "
+                f"({mode_label}, account: {account_label}, host: {host}, port: {port})..."
+            )
+            print(f"[pipeline] Timing jitter ratio: {timing_jitter:.2f}")
+            if reuse_existing_tab:
+                print("[pipeline] Tab selection mode: prefer reusing existing tab.")
+            if local_mode:
+                if not ensure_chrome(port=port, headless=headless, account=account):
+                    print("Error: Failed to start Chrome.", file=sys.stderr)
+                    sys.exit(2)
+            else:
+                print(f"[pipeline] Remote CDP mode enabled: {host}:{port}. Skipping local Chrome launch/restart.")
+
+            # --- Step 2: Connect and check login ---
+            print("[pipeline] Step 2: Checking login status...")
+            publisher = XiaohongshuPublisher(
+                host=host,
+                port=port,
+                timing_jitter=timing_jitter,
+                account_name=cache_account_name,
+            )
+            try:
+                publisher.connect(reuse_existing_tab=reuse_existing_tab)
+                logged_in = publisher.check_login()
+                if not logged_in:
+                    publisher.disconnect()
+                    if headless:
+                        if local_mode:
+                            # Auto-fallback: restart Chrome in headed mode for QR login
+                            print("[pipeline] Headless mode: not logged in. Switching to headed mode for login...")
+                            restart_chrome(port=port, headless=False, account=account)
+                            publisher.connect(reuse_existing_tab=reuse_existing_tab)
+                            publisher.open_login_page()
+                        else:
+                            print(
+                                "[pipeline] Headless + remote mode: cannot auto-restart remote Chrome. "
+                                "Attempting to open login page on existing remote browser..."
+                            )
+                            publisher.connect(reuse_existing_tab=reuse_existing_tab)
+                            publisher.open_login_page()
+                    print("NOT_LOGGED_IN")
+                    sys.exit(1)
+            except CDPError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(2)
+
+            # --- Determine publish mode: video or image ---
+            is_video_mode = bool(args.video or args.video_url)
+
+            # --- Step 3: Prepare media ---
+            image_paths = []
+            video_path = None
+            downloader = None
+
+            if is_video_mode:
+                if args.video_url:
+                    print("[pipeline] Step 3: Downloading video...")
+                    downloader = ImageDownloader(temp_dir=args.temp_dir)
+                    video_path = downloader.download_video(args.video_url)
+                    if not video_path:
+                        print("Error: Video download failed.", file=sys.stderr)
+                        sys.exit(2)
                 else:
-                    print(
-                        "[pipeline] Headless + remote mode: cannot auto-restart remote Chrome. "
-                        "Attempting to open login page on existing remote browser..."
-                    )
-                    publisher.connect(reuse_existing_tab=reuse_existing_tab)
-                    publisher.open_login_page()
-            print("NOT_LOGGED_IN")
-            sys.exit(1)
-    except CDPError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(2)
+                    video_path = args.video
+                    if not os.path.isfile(video_path):
+                        print(f"Error: Video file not found: {video_path}", file=sys.stderr)
+                        sys.exit(2)
+                    print(f"[pipeline] Step 3: Using local video: {video_path}")
+            elif args.image_urls:
+                print(f"[pipeline] Step 3: Downloading {len(args.image_urls)} image(s)...")
+                downloader = ImageDownloader(temp_dir=args.temp_dir)
+                image_paths = downloader.download_all(args.image_urls)
+                if not image_paths:
+                    print("Error: All image downloads failed.", file=sys.stderr)
+                    sys.exit(2)
+            else:
+                image_paths = args.images
+                # Verify local files exist
+                for p in image_paths:
+                    if not os.path.isfile(p):
+                        print(f"Error: Image file not found: {p}", file=sys.stderr)
+                        sys.exit(2)
+                print(f"[pipeline] Step 3: Using {len(image_paths)} local image(s).")
 
-    # --- Determine publish mode: video or image ---
-    is_video_mode = bool(args.video or args.video_url)
-
-    # --- Step 3: Prepare media ---
-    image_paths = []
-    video_path = None
-    downloader = None
-
-    if is_video_mode:
-        if args.video_url:
-            print("[pipeline] Step 3: Downloading video...")
-            downloader = ImageDownloader(temp_dir=args.temp_dir)
-            video_path = downloader.download_video(args.video_url)
-            if not video_path:
-                print("Error: Video download failed.", file=sys.stderr)
+            # --- Step 4: Fill form ---
+            print("[pipeline] Step 4: Filling form...")
+            try:
+                if is_video_mode:
+                    publisher.publish_video(title=title, content=content, video_path=video_path or "")
+                else:
+                    publisher.publish(title=title, content=content, image_paths=image_paths)
+                _select_topics(publisher, topic_tags, timing_jitter=timing_jitter)
+                print("FILL_STATUS: READY_TO_PUBLISH")
+            except CDPError as e:
+                print(f"Error during form fill: {e}", file=sys.stderr)
+                if downloader:
+                    downloader.cleanup()
                 sys.exit(2)
-        else:
-            video_path = args.video
-            if not os.path.isfile(video_path):
-                print(f"Error: Video file not found: {video_path}", file=sys.stderr)
-                sys.exit(2)
-            print(f"[pipeline] Step 3: Using local video: {video_path}")
-    elif args.image_urls:
-        print(f"[pipeline] Step 3: Downloading {len(args.image_urls)} image(s)...")
-        downloader = ImageDownloader(temp_dir=args.temp_dir)
-        image_paths = downloader.download_all(args.image_urls)
-        if not image_paths:
-            print("Error: All image downloads failed.", file=sys.stderr)
-            sys.exit(2)
-    else:
-        image_paths = args.images
-        # Verify local files exist
-        for p in image_paths:
-            if not os.path.isfile(p):
-                print(f"Error: Image file not found: {p}", file=sys.stderr)
-                sys.exit(2)
-        print(f"[pipeline] Step 3: Using {len(image_paths)} local image(s).")
 
-    # --- Step 4: Fill form ---
-    print("[pipeline] Step 4: Filling form...")
-    try:
-        if is_video_mode:
-            publisher.publish_video(
-                title=title, content=content, video_path=video_path
-            )
-        else:
-            publisher.publish(
-                title=title, content=content, image_paths=image_paths
-            )
-        _select_topics(publisher, topic_tags, timing_jitter=timing_jitter)
-        print("FILL_STATUS: READY_TO_PUBLISH")
-    except CDPError as e:
-        print(f"Error during form fill: {e}", file=sys.stderr)
-        if downloader:
-            downloader.cleanup()
-        sys.exit(2)
+            # --- Step 5: Publish (optional) ---
+            should_publish = args.auto_publish and not args.preview
+            if args.preview and args.auto_publish:
+                print("[pipeline] Preview mode is on, skipping publish click.")
 
-    # --- Step 5: Publish (optional) ---
-    should_publish = args.auto_publish and not args.preview
-    if args.preview and args.auto_publish:
-        print("[pipeline] Preview mode is on, skipping publish click.")
+            if should_publish:
+                print("[pipeline] Step 5: Clicking publish button...")
+                try:
+                    note_link = publisher._click_publish()
+                    print("PUBLISH_STATUS: PUBLISHED")
+                    if note_link:
+                        print(f"[pipeline] Note published at: {note_link}")
+                except CDPError as e:
+                    print(f"Error clicking publish: {e}", file=sys.stderr)
+                    if downloader:
+                        downloader.cleanup()
+                    sys.exit(2)
 
-    if should_publish:
-        print("[pipeline] Step 5: Clicking publish button...")
-        try:
-            note_link = publisher._click_publish()
-            print("PUBLISH_STATUS: PUBLISHED")
-            if note_link:
-                print(f"[pipeline] Note published at: {note_link}")
-        except CDPError as e:
-            print(f"Error clicking publish: {e}", file=sys.stderr)
+            # --- Cleanup ---
+            publisher.disconnect()
             if downloader:
                 downloader.cleanup()
-            sys.exit(2)
 
-    # --- Cleanup ---
-    publisher.disconnect()
-    if downloader:
-        downloader.cleanup()
-
-    print("[pipeline] Done.")
+            print("[pipeline] Done.")
+    except SingleInstanceError:
+        print("❌ 另一个发布进程正在运行，请等待完成后重试", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

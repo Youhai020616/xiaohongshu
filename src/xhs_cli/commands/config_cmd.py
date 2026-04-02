@@ -1,6 +1,7 @@
 """
 xhs config — 配置管理命令。
 """
+
 from __future__ import annotations
 
 import click
@@ -37,11 +38,17 @@ def set_config(key, value):
         xhs config set default.engine mcp
         xhs config set cdp.headless true
     """
-    # 类型推断
+    # 类型推断：支持布尔、整数（含负数）、浮点数
     if value.lower() in ("true", "false"):
         value = value.lower() == "true"
-    elif value.isdigit():
-        value = int(value)
+    else:
+        try:
+            value = int(value)
+        except ValueError:
+            try:
+                value = float(value)
+            except ValueError:
+                pass  # 保持字符串
 
     config.set_value(key, value)
     success(f"已设置 {key} = {value}")

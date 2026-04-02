@@ -3,6 +3,7 @@ Docker Engine — 管理 Docker 容器化的 MCP 服务。
 
 通过 docker compose 管理上游 xpzouying/xiaohongshu-mcp 镜像的生命周期。
 """
+
 from __future__ import annotations
 
 import os
@@ -27,7 +28,9 @@ def is_docker_available() -> bool:
     try:
         result = subprocess.run(
             ["docker", "compose", "version"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return result.returncode == 0
     except Exception:
@@ -39,7 +42,9 @@ def is_container_running() -> bool:
     try:
         result = subprocess.run(
             ["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER_NAME],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return result.stdout.strip() == "true"
     except Exception:
@@ -59,7 +64,9 @@ def get_container_status() -> dict[str, Any]:
         fmt = "{{.State.Status}}|{{.Config.Image}}|{{.State.StartedAt}}"
         result = subprocess.run(
             ["docker", "inspect", "-f", fmt, CONTAINER_NAME],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             parts = result.stdout.strip().split("|")
@@ -71,7 +78,9 @@ def get_container_status() -> dict[str, Any]:
         # 获取端口映射
         port_result = subprocess.run(
             ["docker", "port", CONTAINER_NAME],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if port_result.returncode == 0:
             info["ports"] = port_result.stdout.strip()
@@ -104,11 +113,18 @@ def start(port: int = 18060, proxy: str | None = None) -> None:
     if proxy:
         env["XHS_PROXY"] = proxy
 
-    # 启动
-    result = subprocess.run(
-        ["docker", "compose", "-f", COMPOSE_FILE, "up", "-d"],
-        capture_output=True, text=True, env=env, cwd=DOCKER_DIR,
-    )
+    # 启动（拉镜像可能较慢，设置 120s 超时）
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "-f", COMPOSE_FILE, "up", "-d"],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=DOCKER_DIR,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        raise DockerError("Docker 启动超时 (120s)，可能是镜像拉取过慢，请检查网络后重试")
     if result.returncode != 0:
         raise DockerError(f"Docker 启动失败:\n{result.stderr}")
 
@@ -118,20 +134,32 @@ def stop() -> None:
     if not is_container_running():
         return
 
-    result = subprocess.run(
-        ["docker", "compose", "-f", COMPOSE_FILE, "stop"],
-        capture_output=True, text=True, cwd=DOCKER_DIR,
-    )
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "-f", COMPOSE_FILE, "stop"],
+            capture_output=True,
+            text=True,
+            cwd=DOCKER_DIR,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        raise DockerError("Docker 停止超时 (30s)")
     if result.returncode != 0:
         raise DockerError(f"Docker 停止失败:\n{result.stderr}")
 
 
 def remove() -> None:
     """停止并删除 Docker MCP 容器。"""
-    result = subprocess.run(
-        ["docker", "compose", "-f", COMPOSE_FILE, "down"],
-        capture_output=True, text=True, cwd=DOCKER_DIR,
-    )
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "-f", COMPOSE_FILE, "down"],
+            capture_output=True,
+            text=True,
+            cwd=DOCKER_DIR,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        raise DockerError("Docker 清理超时 (30s)")
     if result.returncode != 0:
         raise DockerError(f"Docker 清理失败:\n{result.stderr}")
 
@@ -143,15 +171,26 @@ def logs(lines: int = 50, follow: bool = False) -> str:
         cmd.append("-f")
     cmd.append(CONTAINER_NAME)
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-    return result.stdout + result.stderr
+    # follow 模式使用更长的 timeout，并捕获超时异常返回已读取的内容
+    timeout = 30 if follow else 10
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return result.stdout + result.stderr
+    except subprocess.TimeoutExpired as e:
+        # 超时时返回已读取的部分内容（follow 模式下属正常行为）
+        # e.stdout / e.stderr 可能是 bytes | str | None，需统一为 str
+        stdout = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+        stderr = e.stderr.decode() if isinstance(e.stderr, bytes) else (e.stderr or "")
+        return stdout + stderr
 
 
 def pull() -> None:
     """拉取最新镜像。"""
     result = subprocess.run(
         ["docker", "compose", "-f", COMPOSE_FILE, "pull"],
-        capture_output=True, text=True, cwd=DOCKER_DIR,
+        capture_output=True,
+        text=True,
+        cwd=DOCKER_DIR,
     )
     if result.returncode != 0:
         raise DockerError(f"拉取镜像失败:\n{result.stderr}")

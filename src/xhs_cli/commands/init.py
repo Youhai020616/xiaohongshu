@@ -3,6 +3,7 @@ xhs init — 新用户引导式初始化。
 
 自动完成: 检查环境 → 配置代理 → 启动 MCP → 登录。
 """
+
 from __future__ import annotations
 
 import os
@@ -26,6 +27,20 @@ from xhs_cli.utils import config
 from xhs_cli.utils.output import console, error, info, status, success, warning
 
 
+def _extract_text(result) -> str:
+    """从 MCP 结果中提取文本内容。"""
+    if isinstance(result, dict):
+        content = result.get("content", [])
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+            return "\n".join(parts)
+        return result.get("text", str(result))
+    return str(result)
+
+
 @click.command("init", help="🚀 初始化设置 (新用户从这里开始)")
 @click.option("--proxy", default=None, help="代理地址 (如 http://127.0.0.1:7897)")
 @click.option("--no-proxy", is_flag=True, help="不使用代理 (直连)")
@@ -34,16 +49,18 @@ from xhs_cli.utils.output import console, error, info, status, success, warning
 def init(proxy, no_proxy, port, skip_login):
     """引导新用户完成初始化。"""
     console.print()
-    console.print(Panel(
-        "[bold]欢迎使用 📕 xhs-cli — 小红书命令行工具[/]\n\n"
-        "接下来将引导你完成初始化设置:\n"
-        "  [dim]1.[/] 检查系统环境\n"
-        "  [dim]2.[/] 配置网络代理\n"
-        "  [dim]3.[/] 启动 MCP 服务\n"
-        "  [dim]4.[/] 登录小红书账号",
-        title="🚀 初始化向导",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            "[bold]欢迎使用 📕 xhs-cli — 小红书命令行工具[/]\n\n"
+            "接下来将引导你完成初始化设置:\n"
+            "  [dim]1.[/] 检查系统环境\n"
+            "  [dim]2.[/] 配置网络代理\n"
+            "  [dim]3.[/] 启动 MCP 服务\n"
+            "  [dim]4.[/] 登录小红书账号",
+            title="🚀 初始化向导",
+            border_style="blue",
+        )
+    )
     console.print()
 
     # ── Step 1: 环境检查 ──────────────────────────────────
@@ -126,13 +143,13 @@ def init(proxy, no_proxy, port, skip_login):
         cfg["default"]["engine"] = "cdp"
         config.save_config(cfg)
         skip_login = True
-    elif MCPClient.is_running(port=port):
+    elif MCPClient.is_running(host=cfg["mcp"]["host"], port=port):
         pid = MCPClient.get_server_pid()
         success(f"MCP 服务已在运行 (PID: {pid})")
     else:
         info("正在启动 MCP 服务...")
         try:
-            MCPClient.start_server(port=port, proxy=proxy_addr or None)
+            MCPClient.start_server(port=port, proxy=proxy_addr or "")
             pid = MCPClient.get_server_pid()
             success(f"MCP 服务已启动 (PID: {pid}, 端口: {port})")
         except MCPError as e:
@@ -151,25 +168,31 @@ def init(proxy, no_proxy, port, skip_login):
         info("稍后使用 [bold]xhs login[/] 登录")
     else:
         # 检查是否已登录
+        mcp_host = cfg["mcp"]["host"]
         try:
-            client = MCPClient(host="127.0.0.1", port=port)
-            result = client.search("测试", {})
+            client = MCPClient(host=mcp_host, port=port)
+            result = client.check_login()
+            text = _extract_text(result)
+            if "已登录" not in text:
+                raise MCPError("未登录")
             success("已登录小红书 ✅")
         except MCPError:
             info("你尚未登录，正在获取登录二维码...")
             try:
-                client = MCPClient(host="127.0.0.1", port=port)
+                client = MCPClient(host=mcp_host, port=port)
                 result = client.get_qrcode()
                 console.print()
-                console.print(Panel(
-                    "[bold]请使用小红书 App 扫码登录:[/]\n\n"
-                    "  1. 打开小红书 App\n"
-                    "  2. 点击左上角 [bold]扫一扫[/]\n"
-                    "  3. 扫描下方二维码\n\n"
-                    "[dim]扫码后登录会自动完成，cookies 会持久保存。[/]",
-                    title="📱 扫码登录",
-                    border_style="green",
-                ))
+                console.print(
+                    Panel(
+                        "[bold]请使用小红书 App 扫码登录:[/]\n\n"
+                        "  1. 打开小红书 App\n"
+                        "  2. 点击左上角 [bold]扫一扫[/]\n"
+                        "  3. 扫描下方二维码\n\n"
+                        "[dim]扫码后登录会自动完成，cookies 会持久保存。[/]",
+                        title="📱 扫码登录",
+                        border_style="green",
+                    )
+                )
 
                 # 显示二维码内容
                 if isinstance(result, dict):
@@ -195,7 +218,7 @@ def init(proxy, no_proxy, port, skip_login):
     if mcp_available:
         tips = (
             "[bold]🎉 你已准备就绪! 以下是常用命令:[/]\n\n"
-            "  [bold cyan]xhs search[/] \"关键词\"          搜索笔记\n"
+            '  [bold cyan]xhs search[/] "关键词"          搜索笔记\n'
             "  [bold cyan]xhs publish[/] -t 标题 -c 正文 -i 图片  发布笔记\n"
             "  [bold cyan]xhs like[/] FEED_ID -t TOKEN    点赞\n"
             "  [bold cyan]xhs me[/]                       查看我的信息\n"
@@ -210,7 +233,7 @@ def init(proxy, no_proxy, port, skip_login):
             "  [bold yellow]首先登录:[/]\n"
             "  [bold cyan]xhs login --cdp[/]              打开 Chrome 扫码登录\n\n"
             "  [bold yellow]然后使用:[/]\n"
-            "  [bold cyan]xhs search[/] \"关键词\" --engine cdp   搜索笔记\n"
+            '  [bold cyan]xhs search[/] "关键词" --engine cdp   搜索笔记\n'
             "  [bold cyan]xhs publish[/] -t 标题 -c 正文 -i 图片 --engine cdp\n"
             "  [bold cyan]xhs analytics[/]                数据看板\n"
             "  [bold cyan]xhs notifications[/]            通知消息\n"

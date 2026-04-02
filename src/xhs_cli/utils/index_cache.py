@@ -7,29 +7,38 @@
   dy download 3        →  下载第 3 条
   dy detail 2          →  查看第 2 条详情
 """
+
 from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 CONFIG_DIR = os.path.expanduser("~/.xhs")
 
 INDEX_FILE = os.path.join(CONFIG_DIR, "index_cache.json")
 
 
-def save_index(items: list[dict[str, str]]) -> None:
+def save_index(items: list[dict[str, Any]]) -> None:
     """保存列表结果的索引。每条记录需要 note_id。"""
     os.makedirs(os.path.dirname(INDEX_FILE), exist_ok=True)
     entries = []
     for item in items:
         note_id = item.get("note_id", "")
         if note_id:
-            entries.append({
-                "note_id": str(note_id),
-                "desc": item.get("desc", "")[:60],
-                "author": item.get("author", {}).get("nickname", "") if isinstance(item.get("author"), dict) else str(item.get("author", "")),
-                "sec_uid": item.get("author", {}).get("sec_uid", "") if isinstance(item.get("author"), dict) else "",
-            })
+            entries.append(
+                {
+                    "note_id": str(note_id),
+                    "xsec_token": item.get("xsec_token", ""),
+                    "desc": item.get("desc", "")[:60],
+                    "author": item.get("author", {}).get("nickname", "")
+                    if isinstance(item.get("author"), dict)
+                    else str(item.get("author", "")),
+                    "sec_uid": item.get("author", {}).get("sec_uid", "")
+                    if isinstance(item.get("author"), dict)
+                    else "",
+                }
+            )
     with open(INDEX_FILE, "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
 

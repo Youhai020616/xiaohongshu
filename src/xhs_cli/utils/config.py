@@ -1,10 +1,13 @@
 """
 全局配置管理 — ~/.xhs/config.json
 """
+
 from __future__ import annotations
 
+import copy
 import json
 import os
+import sys
 from typing import Any
 
 CONFIG_DIR = os.path.expanduser("~/.xhs")
@@ -43,9 +46,9 @@ def load_config() -> dict[str, Any]:
             # Merge with defaults
             merged = _deep_merge(DEFAULT_CONFIG, user_cfg)
             return merged
-        except Exception:
-            pass
-    return dict(DEFAULT_CONFIG)
+        except Exception as e:
+            print(f"⚠️ 配置文件加载失败，使用默认配置: {e}", file=sys.stderr)
+    return copy.deepcopy(DEFAULT_CONFIG)
 
 
 def save_config(cfg: dict[str, Any]):
