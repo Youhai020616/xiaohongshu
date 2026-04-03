@@ -12,7 +12,7 @@ from typing import Any
 import click
 
 from xhs_cli.engines.cdp_client import CDPClient, CDPError
-from xhs_cli.engines.mcp_client import MCPClient, MCPError
+from xhs_cli.engines.mcp_client import MCPClient, MCPError, ensure_cookies_in_mcp_dir
 from xhs_cli.utils import config
 from xhs_cli.utils.output import console, error, info, status, success, warning
 
@@ -74,6 +74,9 @@ def login(account, cdp):
 
 def _ensure_mcp_server(cfg: dict[str, Any]) -> MCPClient:
     """确保 MCP 服务运行中，返回可用的 client。"""
+    # 自动迁移可能散落在其他位置的 cookies
+    ensure_cookies_in_mcp_dir()
+
     host = cfg["mcp"]["host"]
     port = cfg["mcp"]["port"]
     auto_start = cfg["mcp"].get("auto_start", True)
@@ -106,6 +109,10 @@ def _login_mcp(account: str | None = None):
 
     # 确保 MCP 服务运行中（自动启动）
     client = _ensure_mcp_server(cfg)
+
+
+    # 自动迁移散落在其他位置的 cookies
+    ensure_cookies_in_mcp_dir()
 
     # 先检查是否已登录
     info("正在检查登录状态...")

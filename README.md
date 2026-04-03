@@ -37,6 +37,14 @@ git clone https://github.com/Youhai020616/xiaohongshu.git
 cd xiaohongshu && bash setup.sh
 ```
 
+### Optional: API Server
+
+To use the REST API server (`xhs api`), install additional dependencies:
+
+```bash
+pip install redbook-cli[api]
+```
+
 ## Quick Start
 
 ```bash

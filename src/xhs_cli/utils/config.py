@@ -89,11 +89,11 @@ def set_value(key_path: str, value: Any):
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """递归合并字典。"""
-    result = dict(base)
+    """递归合并字典，使用 deepcopy 避免引用污染。"""
+    result = copy.deepcopy(base)
     for k, v in override.items():
         if k in result and isinstance(result[k], dict) and isinstance(v, dict):
             result[k] = _deep_merge(result[k], v)
         else:
-            result[k] = v
+            result[k] = copy.deepcopy(v)
     return result

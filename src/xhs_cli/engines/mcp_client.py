@@ -47,7 +47,40 @@ MCP_LOG_FILE = os.path.join(MCP_DIR, "mcp.log")
 MCP_COOKIES_FILE = os.path.join(MCP_DIR, "cookies.json")
 MCP_BINARY = get_binary_path()
 MCP_LOGIN_BINARY = get_login_binary_path()
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
+
+
+def ensure_cookies_in_mcp_dir() -> bool:
+    """
+    检查并迁移 cookies 文件到 MCP 目录。
+
+    Go 登录助手可能将 cookies 写入 ~/cookies.json 或项目根目录，
+    而 MCP 服务期望从 mcp/cookies.json 读取。此函数自动检测并复制。
+
+    Returns:
+        True 表示 MCP_COOKIES_FILE 已存在（或成功迁移），False 表示无可用 cookies。
+    """
+    if os.path.isfile(MCP_COOKIES_FILE) and os.path.getsize(MCP_COOKIES_FILE) > 10:
+        return True
+
+    # 可能的 cookies 写入位置（按优先级）
+    candidates = [
+        os.path.expanduser("~/cookies.json"),
+        os.path.join(_PROJECT_ROOT, "cookies.json"),
+    ]
+
+    for src in candidates:
+        if os.path.isfile(src) and os.path.getsize(src) > 10:
+            try:
+                import shutil
+                os.makedirs(os.path.dirname(MCP_COOKIES_FILE), exist_ok=True)
+                shutil.copy2(src, MCP_COOKIES_FILE)
+                return True
+            except OSError:
+                continue
+
+    return False
 
 class MCPError(Exception):
     """MCP 调用错误。"""
